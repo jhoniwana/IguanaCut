@@ -28,6 +28,15 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
   exportConfirmOpen: boolean,
   closeExportConfirm: () => void,
 }) => {
+  // Frame-by-frame playback state
+  const frameByFrameState = useRef({
+    isPlaying: false,
+    acceleration: 1,
+    maxAcceleration: 10,
+    animationFrameId: null as number | null,
+    keyPressStartTime: 0,
+    accelerationInterval: null as NodeJS.Timeout | null,
+  });
   const [keyboardLayoutMap, setKeyboardLayoutMap] = useState<KeyboardLayoutMap | undefined>();
 
   const altActionRef = useRef<boolean>(false);
@@ -35,6 +44,27 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
   const onKeyUp2 = useCallback(({ action }: KeyEventParams) => {
     const fn = action && keyUpActions[action];
     fn?.();
+    
+    // Stop frame-by-frame playback on arrow key release
+    if (action === 'seekBackward1Sec' || action === 'seekForward1Sec') {
+      const state = frameByFrameState.current;
+      if (state.isPlaying) {
+        state.isPlaying = false;
+        state.acceleration = 1; // Reset acceleration
+        
+        // Clear acceleration interval
+        if (state.accelerationInterval) {
+          clearInterval(state.accelerationInterval);
+          state.accelerationInterval = null;
+        }
+        
+        // Cancel animation frame
+        if (state.animationFrameId) {
+          cancelAnimationFrame(state.animationFrameId);
+          state.animationFrameId = null;
+        }
+      }
+    }
   }, [keyUpActions]);
 
   const onKeyDown2 = useCallback(({ e, action }: KeyEventParams) => {
@@ -59,17 +89,48 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     if (e.target !== document.body) {
       return;
     }
-    // Alternatively, this is how mousetrap does it:
-    // ignore when focus is inside inputs / textareas / selects / contentEditable,
-    // including elements inside shadow DOM. use composedPath() when available.
-    /* const path = (typeof e.composedPath === 'function' ? e.composedPath() : [e.target]) as EventTarget[];
-    const isEditableInPath = path.some((node) => {
-      if (!(node instanceof Element)) return false;
-      const tag = node.tagName;
-      return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (node as HTMLElement).isContentEditable;
-    });
-    if (isEditableInPath) return;
-    */
+
+    // Enhanced frame-by-frame playback for arrow keys
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const state = frameByFrameState.current;
+      const direction = e.key === 'ArrowLeft' ? -1 : 1;
+      
+      if (!state.isPlaying) {
+        // Start frame-by-frame playback
+        state.isPlaying = true;
+        state.keyPressStartTime = performance.now();
+        
+        // Get video element from global or pass it in
+        const video = (window as any).currentVideo;
+        if (video && video.duration) {
+          const fps = 30; // Auto-detect or use video.fps if available
+          const frameTime = 1000 / fps;
+          
+          // Initial step
+          const newTime = Math.max(0, Math.min(video.duration, video.currentTime + (direction * frameTime / fps)));
+          video.currentTime = newTime;
+          
+          // Start acceleration after 500ms of holding
+          state.accelerationInterval = setInterval(() => {
+            const heldDuration = performance.now() - state.keyPressStartTime;
+            if (heldDuration > 500) {
+              // Gradually increase speed up to maxAcceleration
+              const newAcceleration = Math.min(state.acceleration + 0.5, state.maxAcceleration);
+              state.acceleration = newAcceleration;
+              
+              // Apply accelerated stepping using requestAnimationFrame for maximum performance
+              const acceleratedStep = direction * frameTime * newAcceleration / fps;
+              const acceleratedTime = Math.max(0, Math.min(video.duration, video.currentTime + acceleratedStep));
+              video.currentTime = acceleratedTime;
+            }
+          }, 16); // ~60fps update rate for smooth playback
+        }
+      }
+      return;
+    }
 
     // run main actions
     const matchingFn = action && getKeyboardAction(action);
