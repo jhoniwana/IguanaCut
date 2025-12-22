@@ -70,6 +70,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 		videos := api.Group("/videos")
 		{
 			videoHandler := handlers.NewVideoHandler(services, cfg, logger)
+			videos.GET("", videoHandler.List)
 			videos.POST("/upload", videoHandler.Upload)
 			videos.POST("/download", videoHandler.Download)
 			videos.GET("/:id/stream", videoHandler.Stream)

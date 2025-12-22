@@ -5,7 +5,7 @@ import { FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
-import { DialogButton } from './Button';
+import DialogButton from './Button';
 import { showItemInFolder } from '../util';
 import { CleanupChoice, CleanupChoicesType, ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
 import Checkbox from './Checkbox';
@@ -158,7 +158,7 @@ export function useDialog() {
                 <DialogButton>{t('Close')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton primary onClick={handleConfirmClick}>{t('Show')}</DialogButton>
+              <DialogButton primary onClick={handleConfirmClick}>📁 {t('Show in Folder')}</DialogButton>
             </Dialog.ButtonRow>
           </Dialog.Content>
         );

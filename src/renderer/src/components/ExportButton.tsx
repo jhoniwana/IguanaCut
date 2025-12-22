@@ -51,6 +51,16 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
         style={{ verticalAlign: 'middle', marginRight: '.2em' }}
       />
       {text}
+      {segmentsToExport.length > 1 && (
+        <span style={{ 
+          marginLeft: '.5em', 
+          fontSize: '.8em', 
+          opacity: 0.8,
+          fontWeight: 'bold' 
+        }}>
+          ({segmentsToExport.length})
+        </span>
+      )}
     </button>
   );
 });

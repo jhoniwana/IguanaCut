@@ -120,6 +120,202 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
   const getOutputPlaybackRateArgs = useCallback(() => (outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []), [outputPlaybackRate]);
 
+  const createIntroVideoFromImage = useCallback(async ({ imagePath, duration, outPath, onProgress }: {
+    imagePath: string,
+    duration: number,
+    outPath: string,
+    onProgress?: (progress: number) => void,
+  }) => {
+    if (await shouldSkipExistingFile(outPath)) return;
+
+    console.log('Creating intro video from image', { imagePath, duration, outPath });
+
+    const ffmpegArgs = [
+      '-hide_banner',
+      '-loop', '1',
+      '-i', imagePath,
+      '-t', String(duration),
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-y',
+      outPath,
+    ];
+
+    await runFfmpeg(ffmpegArgs, { onProgress });
+  }, [shouldSkipExistingFile, runFfmpeg]);
+
+  const concatFilesWithIntroOutro = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, fixCodecTag, chapters, preserveMetadataOnMerge, videoTimebase, introConfig }: {
+    paths: string[],
+    outDir: string | undefined,
+    outPath: string,
+    metadataFromPath: string,
+    includeAllStreams: boolean,
+    streams: FFprobeStream[],
+    outFormat?: string | undefined,
+    ffmpegExperimental: boolean,
+    onProgress?: (a: number) => void,
+    preserveMovData: boolean,
+    movFastStart: boolean,
+    fixCodecTag: FixCodecTagOption,
+    chapters: Chapter[] | undefined,
+    preserveMetadataOnMerge: boolean,
+    videoTimebase?: number | undefined,
+    introConfig?: {
+      introImagePath: string,
+      introDuration: number,
+      outroImagePath: string,
+      outroDuration: number,
+    },
+  }) => {
+    if (await shouldSkipExistingFile(outPath)) return { haveExcludedStreams: false };
+
+    console.log('Merging files with intro/outro', { paths, introConfig }, 'to', outPath);
+
+    let finalPaths = [...paths];
+    let tempIntroPath: string | undefined;
+    let tempOutroPath: string | undefined;
+
+    try {
+      // Create intro video if configured
+      if (introConfig?.introImagePath) {
+        const { basename, join } = window.require('path');
+        const introFileName = `temp_intro_${Date.now()}.mp4`;
+        tempIntroPath = join(outDir || '', introFileName);
+        
+        await createIntroVideoFromImage({
+          imagePath: introConfig.introImagePath,
+          duration: introConfig.introDuration,
+          outPath: tempIntroPath,
+          onProgress: (progress) => onProgress(progress * 0.1), // 10% of total progress
+        });
+        
+        finalPaths = [tempIntroPath, ...finalPaths];
+      }
+
+      // Create outro video if configured
+      if (introConfig?.outroImagePath) {
+        const { basename, join } = window.require('path');
+        const outroFileName = `temp_outro_${Date.now()}.mp4`;
+        tempOutroPath = join(outDir || '', outroFileName);
+        
+        await createIntroVideoFromImage({
+          imagePath: introConfig.outroImagePath,
+          duration: introConfig.outroDuration,
+          outPath: tempOutroPath,
+          onProgress: (progress) => onProgress(0.1 + (progress * 0.1)), // 10-20% of total progress
+        });
+        
+        finalPaths = [...finalPaths, tempOutroPath];
+      }
+
+      // Use the original concatFiles function for the actual concatenation
+      // We'll call it directly with the modified paths
+      const durations = await pMap(finalPaths, getDuration, { concurrency: 1 });
+      const totalDuration = sum(durations);
+
+      let chaptersPath: string | undefined;
+      if (chapters) {
+        const chaptersWithNames = chapters.map((chapter, i) => ({ ...chapter, name: chapter.name || `Chapter ${i + 1}` }));
+        invariant(outDir != null);
+        chaptersPath = await writeChaptersFfmetadata(outDir, chaptersWithNames);
+      }
+
+      let inputArgs: string[] = [];
+      let inputIndex = 0;
+
+      // Keep track of input index to be used later
+      // eslint-disable-next-line no-inner-declarations
+      function addInput(args: string[]) {
+        inputArgs = [...inputArgs, ...args];
+        const retIndex = inputIndex;
+        inputIndex += 1;
+        return retIndex;
+      }
+
+      // concat list - always first
+      addInput([
+        // https://blog.yo1.dog/fix-for-ffmpeg-protocol-not-on-whitelist-error-for-urls/
+        '-f', 'concat', '-safe', '0', '-protocol_whitelist', 'file,pipe,fd',
+        '-i', '-',
+      ]);
+
+      let metadataSourceIndex: number | undefined;
+      if (preserveMetadataOnMerge) {
+        // If preserve metadata, add the first file (we will get metadata from this input)
+        metadataSourceIndex = addInput(['-i', metadataFromPath]);
+      }
+
+      let chaptersInputIndex: number | undefined;
+      if (chaptersPath) {
+        // if chapters, add chapters source file
+        chaptersInputIndex = addInput(getChaptersInputArgs(chaptersPath));
+      }
+
+      const { streamIdsToCopy, excludedStreamIds } = getStreamIdsToCopy({ streams, includeAllStreams });
+      const mapStreamsArgs = getMapStreamsArgs({
+        allFilesMeta: { [metadataFromPath]: { streams } },
+        copyFileStreams: [{ path: metadataFromPath, streamIds: streamIdsToCopy }],
+        outFormat,
+        manuallyCopyDisposition: true,
+        fixCodecTag,
+      });
+
+      // Keep this similar to losslessCutSingle()
+      const ffmpegArgs = [
+        '-hide_banner',
+        // No progress if we set loglevel warning :(
+        // '-loglevel', 'warning',
+
+        ...inputArgs,
+
+        ...mapStreamsArgs,
+
+        // -map_metadata 0 with concat demuxer doesn't transfer metadata from the concat'ed file input (index 0) when merging.
+        // So we use the first file file (index 1) for metadata
+        // Can only do this if allStreams (-map 0) is set
+        ...(metadataSourceIndex != null ? ['-map_metadata', String(metadataSourceIndex)] : []),
+
+        ...(chaptersInputIndex != null ? ['-map_chapters', String(chaptersInputIndex)] : []),
+
+        ...getMovFlags({ preserveMovData, movFastStart }),
+        ...getMatroskaFlags(),
+
+        // See https://github.com/mifi/lossless-cut/issues/170
+        '-ignore_unknown',
+
+        ...getExperimentalArgs(ffmpegExperimental),
+
+        ...getVideoTimescaleArgs(videoTimebase),
+
+        outPath,
+      ];
+
+      const concatTxt = finalPaths.map((file) => `file '${resolve(file).replaceAll('\'', "'\\''")}'`).join('\n');
+
+      await runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, onProgress: (progress: number) => onProgress(0.2 + (progress * 0.8)) });
+
+      return { haveExcludedStreams: false };
+    } finally {
+      // Clean up temporary files
+      const cleanupTempFile = async (tempPath: string | undefined) => {
+        if (tempPath) {
+          try {
+            const { unlink } = window.require('fs/promises');
+            await unlink(tempPath);
+          } catch (err) {
+            console.warn('Failed to cleanup temp file:', tempPath, err);
+          }
+        }
+      };
+
+      await cleanupTempFile(tempIntroPath);
+      await cleanupTempFile(tempOutroPath);
+    }
+  }, [shouldSkipExistingFile, createIntroVideoFromImage, getDuration, pMap, sum, writeChaptersFfmetadata, getChaptersInputArgs, getStreamIdsToCopy, getMapStreamsArgs, getMovFlags, getMatroskaFlags, getExperimentalArgs, getVideoTimescaleArgs, runFfmpegConcat]);
+
   const concatFiles = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, fixCodecTag, chapters, preserveMetadataOnMerge, videoTimebase }: {
     paths: string[],
     outDir: string | undefined,
@@ -1008,7 +1204,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [extractAttachmentStreams, extractNonAttachmentStreams, filePath]);
 
   return {
-    cutMultiple, concatFiles, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles,
+    cutMultiple, concatFiles, concatFilesWithIntroOutro, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles, createIntroVideoFromImage,
   };
 }
 

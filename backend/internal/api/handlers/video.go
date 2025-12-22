@@ -362,3 +362,14 @@ func (h *VideoHandler) ServeScreenshot(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.File(filepath)
 }
+
+func (h *VideoHandler) List(c *gin.Context) {
+	videos, err := h.services.Video.ListVideos()
+	if err != nil {
+		h.logger.Error("Failed to list videos", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list videos"})
+		return
+	}
+
+	c.JSON(http.StatusOK, videos)
+}

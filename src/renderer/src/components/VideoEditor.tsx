@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera } from 'react-icons/io';
-import { FiUpload, FiScissors } from 'react-icons/fi';
-import { MdContentCut } from 'react-icons/md';
+import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack } from 'react-icons/io';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft } from 'react-icons/fi';
+import { MdContentCut, MdPlaylistPlay } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
+import IntroOutroSelector from './IntroOutroSelector';
 
 // Clean, modern colors
 const colors = {
@@ -48,7 +49,15 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
+  const [showIntroOutro, setShowIntroOutro] = useState(false);
+  const [introOutroConfig, setIntroOutroConfig] = useState({
+    introImagePath: '',
+    introDuration: 5,
+    outroImagePath: '',
+    outroDuration: 5,
+  });
   const [dragStartTime, setDragStartTime] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Refs
   const isPlayingRef = useRef(false);
@@ -556,60 +565,257 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           </div>
         ) : (
           <>
-            {/* Video */}
+            {/* Video Container with Sidebar */}
             <div style={{
-              flex: 1, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', minHeight: '200px',
+              flex: 1, display: 'flex', position: 'relative', minHeight: '200px',
             }}>
-              <video
-                ref={videoRef}
-                src={videoUrl}
-                playsInline
-                style={{ maxWidth: '100%', maxHeight: '100%' }}
-                onLoadedMetadata={() => videoRef.current && setDuration(videoRef.current.duration)}
-                onTimeUpdate={() => !isSeekingRef.current && !isPlayingRef.current && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onClick={() => videoRef.current && (videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause())}
-                // Performance optimizations
-                preload="metadata"
-                crossOrigin="anonymous"
-              />
-
-              {/* Time badge */}
+              {/* Video Area */}
               <div style={{
-                position: 'absolute', top: '12px', left: '12px',
-                background: 'rgba(0,0,0,0.8)', borderRadius: '8px', padding: '8px 12px',
-                color: colors.primary, fontFamily: 'monospace', fontSize: isMobile ? '16px' : '20px', fontWeight: '600',
+                flex: 1, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
               }}>
-                {fmtFull(currentTime)}
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  playsInline
+                  style={{ maxWidth: '100%', maxHeight: '100%' }}
+                  onLoadedMetadata={() => videoRef.current && setDuration(videoRef.current.duration)}
+                  onTimeUpdate={() => !isSeekingRef.current && !isPlayingRef.current && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onClick={() => videoRef.current && (videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause())}
+                  preload="metadata"
+                  crossOrigin="anonymous"
+                />
+
+                {/* Time badge */}
+                <div style={{
+                  position: 'absolute', top: '12px', left: '12px',
+                  background: 'rgba(0,0,0,0.8)', borderRadius: '8px', padding: '8px 12px',
+                  color: colors.primary, fontFamily: 'monospace', fontSize: isMobile ? '16px' : '20px', fontWeight: '600',
+                }}>
+                  {fmtFull(currentTime)}
+                </div>
+
+                {/* Cut indicator */}
+                {pendingCutStart !== null && (
+                  <div style={{
+                    position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
+                    background: colors.accent, borderRadius: '8px', padding: '8px 12px',
+                    color: '#000', fontSize: '13px', fontWeight: '600',
+                    transition: 'right 0.3s ease',
+                  }}>
+                    ✂️ IN: {fmt(pendingCutStart)} — Press O for OUT
+                  </div>
+                )}
+
+                {/* Play overlay */}
+                {!isPlaying && (
+                  <div style={{
+                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    pointerEvents: 'none',
+                  }}>
+                    <div style={{
+                      width: '72px', height: '72px', background: 'rgba(255,255,255,0.2)',
+                      borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <IoMdPlay size={36} color="#fff" style={{ marginLeft: '4px' }} />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Cut indicator */}
-              {pendingCutStart !== null && (
-                <div style={{
-                  position: 'absolute', top: '12px', right: '12px',
-                  background: colors.accent, borderRadius: '8px', padding: '8px 12px',
-                  color: '#000', fontSize: '13px', fontWeight: '600',
-                }}>
-                  ✂️ Start: {fmt(pendingCutStart)} — Now set END
-                </div>
-              )}
+              {/* Clips Sidebar - Floating on right */}
+              <div style={{
+                position: 'absolute', top: 0, right: 0, bottom: 0,
+                width: sidebarOpen ? (isMobile ? '280px' : '300px') : '48px',
+                background: sidebarOpen ? 'rgba(15, 15, 15, 0.95)' : 'rgba(15, 15, 15, 0.8)',
+                backdropFilter: 'blur(10px)',
+                borderLeft: `1px solid ${colors.border}`,
+                transition: 'width 0.3s ease, background 0.3s ease',
+                display: 'flex', flexDirection: 'column',
+                zIndex: 20,
+              }}>
+                {/* Sidebar Toggle */}
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  style={{
+                    background: colors.primary,
+                    border: 'none',
+                    color: '#fff',
+                    padding: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarOpen ? 'space-between' : 'center',
+                    gap: '8px',
+                    borderBottom: `1px solid ${colors.border}`,
+                  }}
+                >
+                  {sidebarOpen ? (
+                    <>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
+                        <MdPlaylistPlay size={20} />
+                        Your Clips ({segments.length})
+                      </span>
+                      <FiChevronRight size={20} />
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                      <MdPlaylistPlay size={20} />
+                      <span style={{ fontSize: '10px', fontWeight: '600' }}>{segments.length}</span>
+                    </div>
+                  )}
+                </button>
 
-              {/* Play overlay */}
-              {!isPlaying && (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  pointerEvents: 'none',
-                }}>
-                  <div style={{
-                    width: '72px', height: '72px', background: 'rgba(255,255,255,0.2)',
-                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <IoMdPlay size={36} color="#fff" style={{ marginLeft: '4px' }} />
+                {/* Clips List */}
+                {sidebarOpen && (
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                    {segments.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '20px', color: colors.textMuted }}>
+                        <FiScissors size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
+                        <p style={{ margin: '0 0 8px', fontSize: '14px' }}>No clips yet</p>
+                        <p style={{ margin: 0, fontSize: '12px' }}>
+                          Press <strong style={{ color: colors.accent }}>I</strong> to mark start<br/>
+                          Press <strong style={{ color: colors.secondary }}>O</strong> to mark end
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {segments.map((seg, i) => (
+                          <div
+                            key={seg.id}
+                            onClick={() => {
+                              if (videoRef.current) seekVideo(seg.start);
+                            }}
+                            style={{
+                              background: seg.selected ? 'rgba(16, 185, 129, 0.15)' : colors.surface,
+                              borderRadius: '10px',
+                              padding: '12px',
+                              border: `1px solid ${seg.selected ? colors.primary : colors.border}`,
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                              <div
+                                onClick={(e) => { e.stopPropagation(); toggleSegment(seg.id); }}
+                                style={{
+                                  width: '22px', height: '22px', borderRadius: '6px',
+                                  background: seg.selected ? colors.primary : 'transparent',
+                                  border: `2px solid ${seg.selected ? colors.primary : colors.border}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  cursor: 'pointer', flexShrink: 0,
+                                }}
+                              >
+                                {seg.selected && <IoMdCheckmark size={14} color="#fff" />}
+                              </div>
+                              <div style={{
+                                width: '4px', height: '20px',
+                                background: segColors[i % segColors.length],
+                                borderRadius: '2px', flexShrink: 0,
+                              }} />
+                              <span style={{ color: colors.text, fontSize: '14px', fontWeight: '600', flex: 1 }}>
+                                {seg.name}
+                              </span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteSegment(seg.id); }}
+                                style={{
+                                  background: 'transparent', border: 'none',
+                                  color: colors.textMuted, cursor: 'pointer', padding: '4px',
+                                }}
+                              >
+                                <IoMdTrash size={16} />
+                              </button>
+                            </div>
+                            <div style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              color: colors.textSecondary, fontSize: '12px', fontFamily: 'monospace',
+                            }}>
+                              <span>{fmt(seg.start)} → {fmt(seg.end || duration)}</span>
+                              <span style={{
+                                background: colors.card, padding: '2px 8px',
+                                borderRadius: '4px', color: colors.primary, fontWeight: '600',
+                              }}>
+                                {fmt((seg.end || duration) - seg.start)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* Export Section in Sidebar */}
+                {sidebarOpen && segments.length > 0 && (
+                  <div style={{
+                    borderTop: `1px solid ${colors.border}`,
+                    padding: '12px',
+                    background: 'rgba(0,0,0,0.3)',
+                  }}>
+                    <div style={{
+                      fontSize: '11px', color: colors.textMuted,
+                      marginBottom: '8px', textAlign: 'center',
+                    }}>
+                      {selectedCount} of {segments.length} clips selected
+                    </div>
+                    <button
+                      onClick={handleExport}
+                      disabled={isExporting || selectedCount === 0}
+                      style={{
+                        width: '100%',
+                        background: isExporting ? colors.card : colors.primary,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '14px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: isExporting || selectedCount === 0 ? 'not-allowed' : 'pointer',
+                        opacity: selectedCount === 0 ? 0.5 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      {isExporting ? (
+                        <>Exporting... {Math.round(exportProgress)}%</>
+                      ) : (
+                        <>
+                          <IoMdDownload size={18} />
+                          Export {selectedCount} Clip{selectedCount !== 1 ? 's' : ''}
+                        </>
+                      )}
+                    </button>
+                    {currentOperation?.status === 'completed' && (
+                      <button
+                        onClick={handleDownload}
+                        style={{
+                          width: '100%',
+                          marginTop: '8px',
+                          background: colors.secondary,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <IoMdDownload size={16} />
+                        Download Ready!
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Timeline */}
@@ -723,16 +929,20 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   onClick={handleMarkStart}
                   style={{
                     ...iconBtn,
-                    width: isMobile ? '48px' : '52px',
-                    height: isMobile ? '48px' : '52px',
+                    width: 'auto',
+                    minWidth: isMobile ? '70px' : '90px',
+                    height: isMobile ? '44px' : '48px',
+                    padding: '0 16px',
                     background: pendingCutStart !== null ? colors.accent : colors.card,
                     color: pendingCutStart !== null ? '#000' : colors.text,
-                    fontSize: '18px',
-                    fontWeight: '700',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    gap: '6px',
                   }}
                   title="Set Start Point (I)"
                 >
-                  I
+                  <span style={{ fontWeight: '800', fontSize: '16px' }}>I</span>
+                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Mark IN</span>
                 </button>
 
                 {/* O - Set Out Point */}
@@ -740,16 +950,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   onClick={handleMarkEnd}
                   style={{
                     ...iconBtn,
-                    width: isMobile ? '48px' : '52px',
-                    height: isMobile ? '48px' : '52px',
-                    background: colors.secondary,
-                    border: 'none',
-                    fontSize: '18px',
-                    fontWeight: '700',
+                    width: 'auto',
+                    minWidth: isMobile ? '80px' : '100px',
+                    height: isMobile ? '44px' : '48px',
+                    padding: '0 16px',
+                    background: pendingCutStart !== null ? colors.secondary : colors.card,
+                    border: pendingCutStart !== null ? 'none' : `1px solid ${colors.border}`,
+                    color: pendingCutStart !== null ? '#fff' : colors.textMuted,
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    gap: '6px',
                   }}
                   title="Set End Point & Create Clip (O)"
                 >
-                  O
+                  <span style={{ fontWeight: '800', fontSize: '16px' }}>O</span>
+                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Mark OUT</span>
                 </button>
 
                 {/* Divider */}
@@ -769,75 +984,50 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 </button>
               </div>
 
-              {/* Export */}
-              {segments.length > 0 && (
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {currentOperation?.status === 'completed' && (
-                    <button onClick={handleDownload} style={btn(colors.primary)}>
-                      <IoMdDownload size={20} /> Download Video
-                    </button>
-                  )}
-                  <button onClick={handleExport} disabled={isExporting} style={{ ...btn(colors.primary), opacity: isExporting ? 0.7 : 1 }}>
-                    <IoMdDownload size={20} />
-                    {isExporting ? `Exporting ${Math.round(exportProgress)}%...` : `Export ${selectedCount} Clip${selectedCount !== 1 ? 's' : ''}`}
+              {/* Quick Actions */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button onClick={() => setShowIntroOutro(!showIntroOutro)} style={{
+                  ...btn(showIntroOutro ? colors.accent : colors.card),
+                  color: showIntroOutro ? '#000' : colors.text,
+                }}>
+                  <IoMdImages size={18} /> {showIntroOutro ? 'Hide' : 'Intro/Outro'}
+                </button>
+                {!sidebarOpen && segments.length > 0 && (
+                  <button onClick={() => setSidebarOpen(true)} style={btn(colors.primary)}>
+                    <MdPlaylistPlay size={18} /> View {segments.length} Clips
                   </button>
+                )}
+              </div>
+
+              {/* Intro/Outro Settings */}
+              {showIntroOutro && (
+                <div style={{
+                  background: colors.surface, borderRadius: '10px', padding: '16px',
+                  marginTop: '16px', border: `1px solid ${colors.border}`
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ color: colors.text, margin: 0 }}>Intro/Outro Settings</h4>
+                    <button onClick={() => setShowIntroOutro(false)} style={{
+                      background: 'transparent', border: 'none', color: colors.textMuted,
+                      cursor: 'pointer', fontSize: '18px'
+                    }}>×</button>
+                  </div>
+                  <IntroOutroSelector 
+                    config={introOutroConfig} 
+                    onChange={setIntroOutroConfig} 
+                  />
                 </div>
               )}
             </div>
 
-            {/* Clips */}
-            {segments.length > 0 && (
+            {/* Keyboard shortcuts hint */}
+            {segments.length === 0 && !sidebarOpen && (
               <div style={{
                 background: colors.bg, borderTop: `1px solid ${colors.border}`,
-                padding: isMobile ? '12px' : '16px', maxHeight: '150px', overflowY: 'auto',
+                padding: '16px', textAlign: 'center',
               }}>
-                <h3 style={{ color: colors.text, margin: '0 0 10px', fontSize: '14px', fontWeight: '600' }}>
-                  Your Clips ({segments.length})
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {segments.map((seg, i) => (
-                    <div key={seg.id} style={{
-                      background: colors.surface, borderRadius: '10px', padding: '10px 12px',
-                      display: 'flex', alignItems: 'center', gap: '10px',
-                      border: `1px solid ${seg.selected ? colors.primary : colors.border}`,
-                    }}>
-                      <div
-                        onClick={() => toggleSegment(seg.id)}
-                        style={{
-                          width: '22px', height: '22px', borderRadius: '6px',
-                          background: seg.selected ? colors.primary : 'transparent',
-                          border: `2px solid ${seg.selected ? colors.primary : colors.border}`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                        }}
-                      >
-                        {seg.selected && <IoMdCheckmark size={14} color="#fff" />}
-                      </div>
-                      <div style={{ width: '4px', height: '24px', background: segColors[i % segColors.length], borderRadius: '2px' }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ color: colors.text, fontSize: '13px', fontWeight: '500' }}>{seg.name}</div>
-                        <div style={{ color: colors.textMuted, fontSize: '11px', fontFamily: 'monospace' }}>
-                          {fmt(seg.start)} → {fmt(seg.end || duration)} ({fmt((seg.end || duration) - seg.start)})
-                        </div>
-                      </div>
-                      <button onClick={() => deleteSegment(seg.id)} style={{
-                        background: 'transparent', border: 'none', color: colors.textMuted, cursor: 'pointer', padding: '6px',
-                      }}>
-                        <IoMdTrash size={18} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Empty state hint */}
-            {segments.length === 0 && (
-              <div style={{
-                background: colors.bg, borderTop: `1px solid ${colors.border}`,
-                padding: '20px', textAlign: 'center',
-              }}>
-                <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
-                  Press <strong style={{ color: colors.accent }}>I</strong> to set start, then <strong style={{ color: colors.secondary }}>O</strong> to create a clip
+                <p style={{ color: colors.textMuted, margin: 0, fontSize: '13px' }}>
+                  💡 Use <strong style={{ color: colors.accent }}>I</strong> to mark start, <strong style={{ color: colors.secondary }}>O</strong> to create clip • <strong>Space</strong> to play/pause • <strong>←→</strong> to seek
                 </p>
               </div>
             )}

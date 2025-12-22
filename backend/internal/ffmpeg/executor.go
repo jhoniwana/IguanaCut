@@ -9,7 +9,9 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"go.uber.org/zap"
@@ -146,32 +148,39 @@ func (e *Executor) parseProgress(stderr io.Reader, stderrBuf *bytes.Buffer, dura
 	}
 }
 
-// CutVideo cuts a video segment with maximum performance optimizations
+// CutVideo cuts a video segment - uses re-encoding for accurate frame-perfect cuts
+// For short segments this ensures no freezing issues during playback
 func (e *Executor) CutVideo(ctx context.Context, input, output string, start, end float64, onProgress ProgressCallback) error {
 	duration := end - start
 
-	// OPTIMIZED for FAST LOSSLESS cutting:
-	// 1. -ss BEFORE -i = INPUT SEEKING (very fast, seeks to keyframe)
-	// 2. -i input file
-	// 3. -t = duration to extract
-	// 4. -map 0 = copy all streams (video, audio, subtitles)
-	// 5. -c copy = lossless stream copy (no re-encoding)
-	// 6. -avoid_negative_ts make_zero = fix timestamp issues
-	// 7. -movflags +faststart = web-optimized MP4 (moov atom at start)
-	//
-	// INPUT SEEKING (-ss before -i) is MUCH faster than output seeking
-	// because FFmpeg seeks directly to the keyframe without decoding.
-	// For lossless -c copy operations this gives near-instant results.
+	e.logger.Info("Cutting segment with accurate re-encode",
+		zap.Float64("start", start),
+		zap.Float64("end", end),
+		zap.Float64("duration", duration),
+	)
+
+	// Use accurate cutting with re-encoding for reliable results
+	// This ensures no freezing at segment boundaries
+	// CRF 17 is visually nearly lossless
+	return e.accurateCut(ctx, input, output, start, duration, onProgress)
+}
+
+// accurateCut performs frame-accurate cutting by re-encoding
+// Uses high quality settings (CRF 17) to minimize quality loss
+func (e *Executor) accurateCut(ctx context.Context, input, output string, start, duration float64, onProgress ProgressCallback) error {
 	args := []string{
 		"-hide_banner",
-		"-ss", fmt.Sprintf("%.6f", start), // INPUT SEEKING (before -i) = FAST
+		"-ss", fmt.Sprintf("%.6f", start), // Input seeking for speed
 		"-i", input,
-		"-t", fmt.Sprintf("%.6f", duration), // Duration to extract
-		"-map", "0", // Copy all streams
-		"-c", "copy", // Lossless copy - no re-encoding
-		"-avoid_negative_ts", "make_zero", // Fix timestamp issues
-		"-movflags", "+faststart", // Web-optimized (moov atom at start)
-		"-y", // Overwrite output
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17", // Visually nearly lossless
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
 		output,
 	}
 
@@ -180,6 +189,132 @@ func (e *Executor) CutVideo(ctx context.Context, input, output string, start, en
 		Duration:   duration,
 		OnProgress: onProgress,
 	})
+}
+
+// FindKeyframes finds keyframe timestamps in a time range
+func (e *Executor) FindKeyframes(ctx context.Context, input string, startTime, endTime float64) ([]float64, error) {
+	if startTime < 0 {
+		startTime = 0
+	}
+
+	args := []string{
+		"-hide_banner",
+		"-read_intervals", fmt.Sprintf("%.3f%%+%.3f", startTime, endTime-startTime),
+		"-select_streams", "v:0",
+		"-show_entries", "packet=pts_time,flags",
+		"-of", "csv=p=0",
+		input,
+	}
+
+	cmd := exec.CommandContext(ctx, e.ffprobePath, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	var keyframes []float64
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) >= 2 {
+			// Check if it's a keyframe (flags contain 'K')
+			if strings.Contains(parts[1], "K") {
+				if ts, err := strconv.ParseFloat(parts[0], 64); err == nil {
+					keyframes = append(keyframes, ts)
+				}
+			}
+		}
+	}
+
+	sort.Float64s(keyframes)
+	return keyframes, nil
+}
+
+// regularCut performs a standard lossless cut (may have keyframe issues)
+func (e *Executor) regularCut(ctx context.Context, input, output string, start, end float64, onProgress ProgressCallback) error {
+	duration := end - start
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-map", "0",
+		"-c", "copy",
+		"-avoid_negative_ts", "make_zero",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+	return e.Execute(ctx, ExecuteOptions{Args: args, Duration: duration, OnProgress: onProgress})
+}
+
+// reencodeSegment re-encodes a video segment with high quality
+func (e *Executor) reencodeSegment(ctx context.Context, input, output string, start, duration float64, onProgress ProgressCallback) error {
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17", // High quality
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-avoid_negative_ts", "make_zero",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+	return e.Execute(ctx, ExecuteOptions{Args: args, Duration: duration, OnProgress: onProgress})
+}
+
+// losslessCut performs a lossless cut starting from a keyframe
+func (e *Executor) losslessCut(ctx context.Context, input, output string, start, end float64, onProgress ProgressCallback) error {
+	duration := end - start
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-map", "0",
+		"-c", "copy",
+		"-avoid_negative_ts", "make_zero",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+	return e.Execute(ctx, ExecuteOptions{Args: args, Duration: duration, OnProgress: onProgress})
+}
+
+// concatParts concatenates multiple video parts into one
+func (e *Executor) concatParts(ctx context.Context, inputs []string, output string, totalDuration float64, onProgress ProgressCallback) error {
+	// Create concat file
+	concatFile := output + ".concat.txt"
+	var content strings.Builder
+	for _, input := range inputs {
+		content.WriteString(fmt.Sprintf("file '%s'\n", input))
+	}
+	if err := os.WriteFile(concatFile, []byte(content.String()), 0644); err != nil {
+		return err
+	}
+	defer os.Remove(concatFile)
+
+	args := []string{
+		"-hide_banner",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", concatFile,
+		"-c", "copy",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+	return e.Execute(ctx, ExecuteOptions{Args: args, Duration: totalDuration, OnProgress: onProgress})
 }
 
 // CutVideoAccurate cuts a video segment with frame-accurate precision (slower)
@@ -209,10 +344,9 @@ func (e *Executor) CutVideoAccurate(ctx context.Context, input, output string, s
 	})
 }
 
-// MergeVideos merges multiple video segments using concat demuxer (optimized)
+// MergeVideos merges multiple video segments using concat demuxer
 func (e *Executor) MergeVideos(ctx context.Context, inputs []string, output string, totalDuration float64, onProgress ProgressCallback) error {
 	// Create concat file content and write to a temp file
-	// (using pipe:0 with concat demuxer is unreliable)
 	concatFile := output + ".concat.txt"
 	var concatContent bytes.Buffer
 	for _, input := range inputs {
@@ -223,21 +357,21 @@ func (e *Executor) MergeVideos(ctx context.Context, inputs []string, output stri
 	if err := os.WriteFile(concatFile, concatContent.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to create concat file: %w", err)
 	}
-	defer os.Remove(concatFile) // Clean up concat file
+	defer os.Remove(concatFile)
 
-	// OPTIMIZED for LOSSLESS merging:
-	// - concat demuxer with -c copy = no re-encoding
-	// - movflags +faststart = web-optimized output
-	// - map 0 = copy all streams
+	e.logger.Info("Merging segments",
+		zap.Int("segmentCount", len(inputs)),
+		zap.Float64("totalDuration", totalDuration),
+	)
+
+	// Use concat demuxer with copy - segments are already re-encoded with same params
 	args := []string{
 		"-hide_banner",
 		"-f", "concat",
 		"-safe", "0",
-		"-i", concatFile, // Read concat file list from temp file
-		"-map", "0", // Copy all streams
-		"-c", "copy", // Lossless copy - no re-encoding
-		"-avoid_negative_ts", "make_zero", // Fix timestamp issues
-		"-movflags", "+faststart", // Web-optimized MP4
+		"-i", concatFile,
+		"-c", "copy", // Copy since all segments have same encoding
+		"-movflags", "+faststart",
 		"-y",
 		output,
 	}
@@ -541,6 +675,34 @@ func (e *Executor) SmartCutSegments(ctx context.Context, input string, segments 
 
 	// Merge all segments
 	return e.MergeVideos(ctx, tempFiles, output, totalDuration, onProgress)
+}
+
+// CreateIntroVideo creates a video from an image with specified duration
+func (e *Executor) CreateIntroVideo(ctx context.Context, imagePath string, duration int, outputPath string, onProgress ProgressCallback) error {
+	args := []string{
+		"-hide_banner",
+		"-loop", "1",
+		"-i", imagePath,
+		"-t", fmt.Sprintf("%d", duration),
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-crf", "18",
+		"-pix_fmt", "yuv420p",
+		"-movflags", "+faststart",
+		"-y",
+		outputPath,
+	}
+
+	return e.Execute(ctx, ExecuteOptions{
+		Args:       args,
+		Duration:   float64(duration),
+		OnProgress: onProgress,
+	})
+}
+
+// ExecuteWithStdin runs FFmpeg with stdin data
+func (e *Executor) ExecuteWithStdin(ctx context.Context, opts ExecuteOptions) error {
+	return e.Execute(ctx, opts) // Execute method already handles stdin
 }
 
 // GetFFmpegPath returns the FFmpeg binary path

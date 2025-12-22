@@ -76,6 +76,10 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		zap.String("videoId", project.VideoID),
 		zap.Bool("mergeSegments", request.MergeSegments),
 		zap.Bool("exportSeparate", request.ExportSeparate),
+		zap.String("introImagePath", request.IntroImagePath),
+		zap.Int("introDuration", request.IntroDuration),
+		zap.String("outroImagePath", request.OutroImagePath),
+		zap.Int("outroDuration", request.OutroDuration),
 	)
 
 	// Determine segments to export
@@ -92,6 +96,21 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 			}
 		}
 		segments = filteredSegments
+	}
+
+	// Log segment details for debugging
+	for i, seg := range segments {
+		endVal := "nil"
+		if seg.End != nil {
+			endVal = fmt.Sprintf("%.3f", *seg.End)
+		}
+		s.logger.Info("Segment to export",
+			zap.Int("index", i),
+			zap.String("id", seg.ID),
+			zap.String("name", seg.Name),
+			zap.Float64("start", seg.Start),
+			zap.String("end", endVal),
+		)
 	}
 
 	if len(segments) == 0 {
@@ -123,15 +142,53 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 	var outputFiles []string
 	var exportErr error
 
+	// Handle intro/outro videos
+	var introPath, outroPath string
+	var tempFiles []string
+
+	if request.IntroImagePath != "" && request.IntroDuration > 0 {
+		introPath = s.storage.GetOutputPath(fmt.Sprintf("temp_intro_%s_%d.mp4", project.ID, time.Now().Unix()))
+		err := s.ffmpeg.CreateIntroVideo(ctx, request.IntroImagePath, request.IntroDuration, introPath, func(progress float64) {
+			onProgress(progress * 0.1) // 10% of total progress
+		})
+		if err != nil {
+			operation.Status = models.OperationStatusFailed
+			operation.Error = fmt.Sprintf("failed to create intro: %v", err)
+			return
+		}
+		tempFiles = append(tempFiles, introPath)
+	}
+
+	if request.OutroImagePath != "" && request.OutroDuration > 0 {
+		outroPath = s.storage.GetOutputPath(fmt.Sprintf("temp_outro_%s_%d.mp4", project.ID, time.Now().Unix()))
+		err := s.ffmpeg.CreateIntroVideo(ctx, request.OutroImagePath, request.OutroDuration, outroPath, func(progress float64) {
+			onProgress(0.1 + (progress * 0.1)) // 10-20% of total progress
+		})
+		if err != nil {
+			operation.Status = models.OperationStatusFailed
+			operation.Error = fmt.Sprintf("failed to create outro: %v", err)
+			return
+		}
+		tempFiles = append(tempFiles, outroPath)
+	}
+
 	// Handle different export modes
 	if len(segments) == 1 {
 		// Single segment - just cut it
 		outputPath := s.storage.GetOutputPath(fmt.Sprintf("%s.%s", outputName, format))
 		seg := segments[0]
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
+		if seg.End == nil {
+			operation.Status = models.OperationStatusFailed
+			operation.Error = "segment has no end time defined"
+			s.logger.Error("Single segment has nil End value", zap.String("id", seg.ID))
+			return
 		}
+		end := *seg.End
+		s.logger.Info("Exporting single segment",
+			zap.Float64("start", seg.Start),
+			zap.Float64("end", end),
+			zap.Float64("duration", end-seg.Start),
+		)
 		exportErr = s.ffmpeg.CutVideo(ctx, inputPath, outputPath, seg.Start, end, onProgress)
 		if exportErr == nil {
 			outputFiles = append(outputFiles, outputPath)
@@ -139,7 +196,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 	} else {
 		// Multiple segments
 		if request.MergeSegments {
-			// Export merged file
+			// Export merged file - cut segments first then merge
 			mergedPath := s.storage.GetOutputPath(fmt.Sprintf("%s_merged.%s", outputName, format))
 			exportErr = s.exportMergedSegments(ctx, inputPath, mergedPath, segments, onProgress)
 			if exportErr == nil {
@@ -188,6 +245,15 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		return
 	}
 
+	// Cleanup temp files
+	for _, tempFile := range tempFiles {
+		if err := os.Remove(tempFile); err != nil {
+			s.logger.Warn("Failed to cleanup temp file",
+				zap.String("file", tempFile),
+				zap.Error(err))
+		}
+	}
+
 	// Success
 	now := time.Now()
 	operation.Status = models.OperationStatusCompleted
@@ -206,29 +272,45 @@ func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, 
 	// Cut each segment to temp files
 	tempFiles := make([]string, len(segments))
 
+	// Calculate total duration first for progress reporting
+	totalDuration := 0.0
+	for i, seg := range segments {
+		if seg.End == nil {
+			s.logger.Error("Segment has nil End value",
+				zap.Int("index", i),
+				zap.String("id", seg.ID),
+				zap.Float64("start", seg.Start),
+			)
+			return fmt.Errorf("segment %d (%s) has no end time defined", i, seg.ID)
+		}
+		segDuration := *seg.End - seg.Start
+		s.logger.Info("Segment duration",
+			zap.Int("index", i),
+			zap.Float64("start", seg.Start),
+			zap.Float64("end", *seg.End),
+			zap.Float64("duration", segDuration),
+		)
+		totalDuration += segDuration
+	}
+	s.logger.Info("Total expected duration", zap.Float64("totalDuration", totalDuration))
+
 	for i, seg := range segments {
 		tempFile := s.storage.GetTempPath(fmt.Sprintf("segment_%d_%s.mp4", i, uuid.New().String()))
 		tempFiles[i] = tempFile
 
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
-		}
+		end := *seg.End // Already validated above
+
+		s.logger.Info("Cutting segment",
+			zap.Int("index", i),
+			zap.Float64("start", seg.Start),
+			zap.Float64("end", end),
+			zap.String("tempFile", tempFile),
+		)
 
 		// Cut segment (no progress callback for individual segments)
 		if err := s.ffmpeg.CutVideo(ctx, inputPath, tempFile, seg.Start, end, nil); err != nil {
 			return fmt.Errorf("failed to cut segment %d: %w", i, err)
 		}
-	}
-
-	// Merge all segments
-	totalDuration := 0.0
-	for _, seg := range segments {
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
-		}
-		totalDuration += (end - seg.Start)
 	}
 
 	if err := s.ffmpeg.MergeVideos(ctx, tempFiles, outputPath, totalDuration, onProgress); err != nil {
@@ -250,10 +332,17 @@ func (s *OperationService) exportMultipleSegments(ctx context.Context, inputPath
 		segmentName := fmt.Sprintf("%s_segment_%d.%s", outputBaseName, i+1, format)
 		outputPath := s.storage.GetOutputPath(segmentName)
 
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
+		if seg.End == nil {
+			return outputFiles, fmt.Errorf("segment %d (%s) has no end time defined", i, seg.ID)
 		}
+		end := *seg.End
+
+		s.logger.Info("Exporting separate segment",
+			zap.Int("index", i),
+			zap.Float64("start", seg.Start),
+			zap.Float64("end", end),
+			zap.Float64("duration", end-seg.Start),
+		)
 
 		if err := s.ffmpeg.CutVideo(ctx, inputPath, outputPath, seg.Start, end, onProgress); err != nil {
 			return outputFiles, fmt.Errorf("failed to export segment %d: %w", i, err)
@@ -287,10 +376,10 @@ func (s *OperationService) exportChapters(ctx context.Context, outputPath string
 func (s *OperationService) generateChaptersTXT(segments []models.Segment) string {
 	var content strings.Builder
 	for i, seg := range segments {
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
+		if seg.End == nil {
+			continue // Skip segments without end time
 		}
+		end := *seg.End
 
 		name := seg.Name
 		if name == "" {
@@ -314,10 +403,10 @@ func (s *OperationService) generateChaptersXML(segments []models.Segment) string
 `)
 
 	for i, seg := range segments {
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
+		if seg.End == nil {
+			continue // Skip segments without end time
 		}
+		end := *seg.End
 
 		name := seg.Name
 		if name == "" {
@@ -346,10 +435,10 @@ func (s *OperationService) generateChaptersJSON(segments []models.Segment) strin
 
 	var chapters []Chapter
 	for i, seg := range segments {
-		end := seg.Start + 60.0
-		if seg.End != nil {
-			end = *seg.End
+		if seg.End == nil {
+			continue // Skip segments without end time
 		}
+		end := *seg.End
 
 		name := seg.Name
 		if name == "" {
@@ -365,6 +454,35 @@ func (s *OperationService) generateChaptersJSON(segments []models.Segment) strin
 
 	data, _ := json.MarshalIndent(chapters, "", "  ")
 	return string(data)
+}
+
+// mergeVideosWithIntroOutro merges videos with intro/outro using concat demuxer
+func (s *OperationService) mergeVideosWithIntroOutro(ctx context.Context, inputPaths []string, outputPath string, onProgress ffmpeg.ProgressCallback) error {
+	// Create concat file content
+	concatContent := ""
+	for _, path := range inputPaths {
+		concatContent += fmt.Sprintf("file '%s'\n", path)
+	}
+
+	// Use FFmpeg concat demuxer for lossless merging
+	args := []string{
+		"-hide_banner",
+		"-f", "concat",
+		"-safe", "0",
+		"-protocol_whitelist", "file,pipe,fd",
+		"-i", "-",
+		"-c", "copy",
+		"-y",
+		outputPath,
+	}
+
+	return s.ffmpeg.ExecuteWithStdin(ctx, ffmpeg.ExecuteOptions{
+		Args: args,
+		OnProgress: func(progress float64) {
+			onProgress(0.2 + (progress * 0.8)) // 20-100% of total progress
+		},
+		StdinData: strings.NewReader(concatContent),
+	})
 }
 
 func (s *OperationService) GetStatus(operationID string) (*models.Operation, error) {

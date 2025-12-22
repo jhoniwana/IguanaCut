@@ -12,12 +12,14 @@ import useUserSettings from '../hooks/useUserSettings';
 import { isMov } from '../util/streams';
 import { getOutDir } from '../util';
 import { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../../common/ffprobe';
-import Button, { DialogButton } from './Button';
+import Button from './Button';
+import DialogButton from './Button';
 import { defaultMergedFileTemplate, GeneratedOutFileNames, GenerateMergedOutFileNames } from '../util/outputNameTemplate';
 import { dangerColor, saveColor, warningColor } from '../colors';
 import * as Dialog from './Dialog';
 import FileNameTemplateEditor from './FileNameTemplateEditor';
 import HighlightedText from './HighlightedText';
+import IntroOutroSelector from './IntroOutroSelector';
 
 const { basename } = window.require('path');
 
@@ -35,7 +37,7 @@ function Alert({ text }: { text: string }) {
 type Problem = { index: number, type: 'extraneous' }
   | { index: number, type: 'parameter_mismatch', key: string, values: [string | number | undefined, string | number | undefined] };
 
-function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMergedFileNames, onConcat, alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles, fileFormat, setFileFormat, detectedFileFormat, setDetectedFileFormat, onOutputFormatUserChange }: {
+function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMergedFileNames, onConcat, alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles, fileFormat, setFileFormat, detectedFileFormat, setDetectedFileFormat, onOutputFormatUserChange, introOutroConfig, setIntroOutroConfig }: {
   isShown: boolean,
   onHide: () => void,
   paths: string[],
@@ -49,6 +51,18 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
   detectedFileFormat: string | undefined,
   setDetectedFileFormat: Dispatch<SetStateAction<string | undefined>>,
   onOutputFormatUserChange: (newFormat: string) => void,
+  introOutroConfig?: {
+    introImagePath: string,
+    introDuration: number,
+    outroImagePath: string,
+    outroDuration: number,
+  },
+  setIntroOutroConfig?: (config: {
+    introImagePath: string,
+    introDuration: number,
+    outroImagePath: string,
+    outroDuration: number,
+  }) => void,
 }) {
   const { t } = useTranslation();
   const { preserveMovData, setPreserveMovData, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, customOutDir, simpleMode, setMergedFileTemplate, outFormatLocked, changeOutDir } = useUserSettings();
@@ -59,6 +73,10 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
   const [clearBatchFilesAfterConcat, setClearBatchFilesAfterConcat] = useState(false);
   const [enableReadFileMeta, setEnableReadFileMeta] = useState(false);
   const [uniqueSuffix, setUniqueSuffix] = useState(Date.now());
+  const [introImagePath, setIntroImagePath] = useState<string>('');
+  const [introDuration, setIntroDuration] = useState<number>(5);
+  const [outroImagePath, setOutroImagePath] = useState<string>('');
+  const [outroDuration, setOutroDuration] = useState<number>(5);
 
   const firstPath = useMemo(() => {
     if (paths.length === 0) return undefined;
@@ -258,9 +276,15 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
           </div>
 
           {fileFormat != null && (
-            <div style={{ marginBottom: '1em' }}>
-              <FileNameTemplateEditor mode="merge-files" template={mergedFileTemplate} setTemplate={setMergedFileTemplate} defaultTemplate={defaultMergedFileTemplate} generateFileNames={generateFileNames} />
-            </div>
+          <div style={{ marginBottom: '1em' }}>
+            <FileNameTemplateEditor mode="merge-files" template={mergedFileTemplate} setTemplate={setMergedFileTemplate} defaultTemplate={defaultMergedFileTemplate} generateFileNames={generateFileNames} />
+          </div>
+
+          {introOutroConfig && setIntroOutroConfig && (
+            <IntroOutroSelector 
+              config={introOutroConfig} 
+              onChange={setIntroOutroConfig} 
+            />
           )}
 
           <div style={{ minHeight: '2.7em' }}>

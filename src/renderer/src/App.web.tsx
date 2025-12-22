@@ -24,6 +24,7 @@ import {
 } from 'react-icons/fi';
 import { 
   MdAutoDelete, 
+  MdHighQuality,
   MdStorage,
   MdVideoLibrary,
   MdSpeed,
@@ -32,6 +33,7 @@ import {
 import { FaStar, FaCheckCircle, FaArrowRight } from 'react-icons/fa';
 import DownloadModal from './components/DownloadModal';
 import VideoEditor from './components/VideoEditor';
+import GPUAcceleratedTimeline from './components/GPUAcceleratedTimeline';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
@@ -162,11 +164,17 @@ export default function App() {
       description: 'Professional keyboard shortcuts for lightning-fast editing',
       gradient: colors.accent3,
     },
-    {
+     {
       icon: <IoMdImages size={32} />,
       title: 'Screenshot Capture',
       description: 'Extract high-quality frames from any point in your video',
       gradient: colors.accent1,
+    },
+    {
+      icon: <MdHighQuality size={32} />,
+      title: 'GPU Timeline',
+      description: 'Hardware-accelerated timeline with frame capture and export',
+      gradient: colors.accent4,
     },
     {
       icon: <FiGrid size={32} />,

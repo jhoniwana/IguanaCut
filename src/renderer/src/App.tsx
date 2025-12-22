@@ -134,6 +134,12 @@ function App() {
   const [mainFileMeta, setMainFileMeta] = useState<{ streams: FileMeta['streams'], formatData: FFprobeFormat, chapters: FFprobeChapter[] }>();
   const [streamsSelectorShown, setStreamsSelectorShown] = useState(false);
   const [concatDialogOpen, setConcatDialogOpen] = useState(false);
+  const [introOutroConfig, setIntroOutroConfig] = useState({
+    introImagePath: '',
+    introDuration: 5,
+    outroImagePath: '',
+    outroDuration: 5,
+  });
   const [zoomUnrounded, setZoom] = useState(1);
   const [shortestFlag, setShortestFlag] = useState(false);
   const [zoomWindowStartTime, setZoomWindowStartTime] = useState(0);
@@ -573,7 +579,7 @@ function App() {
   const isEncoding = needSmartCut || lossyMode != null;
 
   const {
-    concatFiles, html5ifyDummy, cutMultiple, concatCutSegments, html5ify, fixInvalidDuration, extractStreams, tryDeleteFiles,
+    concatFiles, concatFilesWithIntroOutro, html5ifyDummy, cutMultiple, concatCutSegments, html5ify, fixInvalidDuration, extractStreams, tryDeleteFiles,
   } = useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate: encBitrate, appendFfmpegCommandLog });
 
   const { previewFilePath, setPreviewFilePath, usingDummyVideo, setUsingDummyVideo, userHtml5ifyCurrentFile, convertFormatBatch, html5ifyAndLoadWithPreferences } = useHtml5ify({
@@ -914,7 +920,12 @@ function App() {
 
       await maybeMkDeepOutDir({ outputDir: outDir, fileOutPath: outPath });
 
-      const { haveExcludedStreams } = await concatFiles({ paths, outPath, outDir, outFormat, metadataFromPath, includeAllStreams, streams, ffmpegExperimental, onProgress: setProgress, preserveMovData, movFastStart, fixCodecTag, preserveMetadataOnMerge, chapters: chaptersFromSegments });
+      const hasIntroOutro = introOutroConfig.introImagePath || introOutroConfig.outroImagePath;
+      const { haveExcludedStreams } = hasIntroOutro 
+        ? await concatFilesWithIntroOutro({ 
+            paths, outPath, outDir, outFormat, metadataFromPath, includeAllStreams, streams, ffmpegExperimental, onProgress: setProgress, preserveMovData, movFastStart, fixCodecTag, preserveMetadataOnMerge, chapters: chaptersFromSegments, introConfig: introOutroConfig 
+          })
+        : await concatFiles({ paths, outPath, outDir, outFormat, metadataFromPath, includeAllStreams, streams, ffmpegExperimental, onProgress: setProgress, preserveMovData, movFastStart, fixCodecTag, preserveMetadataOnMerge, chapters: chaptersFromSegments });
 
       const outputSize = await readFileSize(outPath); // * 1.06; // testing:)
       const sizeCheckResult = checkFileSizes(inputSize, outputSize);
@@ -2710,7 +2721,7 @@ function App() {
                 </Dialog.Portal>
               </Dialog.Root>
 
-              <ConcatDialog isShown={batchFiles.length > 0 && concatDialogOpen} onHide={() => setConcatDialogOpen(false)} paths={batchFilePaths} mergedFileTemplate={mergedFileTemplateOrDefault} generateMergedFileNames={generateMergedFileNames} onConcat={userConcatFiles} setAlwaysConcatMultipleFiles={setAlwaysConcatMultipleFiles} alwaysConcatMultipleFiles={alwaysConcatMultipleFiles} fileFormat={fileFormat} setFileFormat={setFileFormat} detectedFileFormat={detectedFileFormat} setDetectedFileFormat={setDetectedFileFormat} onOutputFormatUserChange={onOutputFormatUserChange} />
+              <ConcatDialog isShown={batchFiles.length > 0 && concatDialogOpen} onHide={() => setConcatDialogOpen(false)} paths={batchFilePaths} mergedFileTemplate={mergedFileTemplateOrDefault} generateMergedFileNames={generateMergedFileNames} onConcat={userConcatFiles} setAlwaysConcatMultipleFiles={setAlwaysConcatMultipleFiles} alwaysConcatMultipleFiles={alwaysConcatMultipleFiles} fileFormat={fileFormat} setFileFormat={setFileFormat} detectedFileFormat={detectedFileFormat} setDetectedFileFormat={setDetectedFileFormat} onOutputFormatUserChange={onOutputFormatUserChange} introOutroConfig={introOutroConfig} setIntroOutroConfig={setIntroOutroConfig} />
 
               <KeyboardShortcuts isShown={keyboardShortcutsVisible} onHide={() => setKeyboardShortcutsVisible(false)} keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} getKeyboardAction={getKeyboardAction} />
 

@@ -222,6 +222,26 @@ function Timeline({
     });
   }, [spring]);
 
+  // Enhanced zoom event listener
+  useEffect(() => {
+    const handleTimelineZoom = (event: CustomEvent) => {
+      if (event.detail && typeof event.detail.zoom === 'number') {
+        // Update zoom through parent component
+        const zoomEvent = new WheelEvent('zoom', {
+          deltaY: event.detail.zoom > zoom ? -1 : 1,
+          ctrlKey: true,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+        });
+        onWheel(zoomEvent);
+      }
+    };
+
+    window.addEventListener('timelineZoom', handleTimelineZoom);
+    return () => window.removeEventListener('timelineZoom', handleTimelineZoom);
+  }, [onWheel, zoom]);
+
   // Pan timeline when cursor moves out of timeline window
   useEffect(() => {
     if (timeOfInterestPosPixels == null || timelineScrollerSkipEventRef.current) return;

@@ -136,6 +136,11 @@ type ExportRequest struct {
 	ExportSeparate bool     `json:"export_separate,omitempty"` // Export each segment as separate file
 	ExportChapters bool     `json:"export_chapters,omitempty"` // Export segments as chapters
 	ChaptersFormat string   `json:"chapters_format,omitempty"` // "txt", "xml", "json"
+	// Intro/Outro settings
+	IntroImagePath string `json:"intro_image_path,omitempty"`
+	IntroDuration  int    `json:"intro_duration,omitempty"` // Duration in seconds
+	OutroImagePath string `json:"outro_image_path,omitempty"`
+	OutroDuration  int    `json:"outro_duration,omitempty"` // Duration in seconds
 }
 
 // Download represents a video download from URL
