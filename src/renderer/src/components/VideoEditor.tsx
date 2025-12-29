@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate } from 'react-icons/io';
+import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
 import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2 } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
@@ -68,6 +68,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
   // Edit mode - when editing an existing clip
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+
+  // Drag and drop reordering
+  const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
+  const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
 
   // Refs
   const isPlayingRef = useRef(false);
@@ -410,6 +414,68 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   // Cancel editing
   const cancelEditing = () => {
     setEditingClipId(null);
+  };
+
+  // Drag and drop handlers for reordering clips
+  const handleDragStart = (e: React.DragEvent, clipId: string) => {
+    setDraggedClipId(clipId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', clipId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, clipId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (clipId !== draggedClipId) {
+      setDragOverClipId(clipId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverClipId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetClipId: string) => {
+    e.preventDefault();
+    if (!draggedClipId || draggedClipId === targetClipId) {
+      setDraggedClipId(null);
+      setDragOverClipId(null);
+      return;
+    }
+
+    // Find indices
+    const fromIndex = segments.findIndex(s => s.id === draggedClipId);
+    const toIndex = segments.findIndex(s => s.id === targetClipId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedClipId(null);
+      setDragOverClipId(null);
+      return;
+    }
+
+    // Reorder segments
+    const updated = [...segments];
+    const [removed] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, removed);
+
+    // Rename clips to reflect new order
+    const renamed = updated.map((seg, i) => ({
+      ...seg,
+      name: `Clip ${i + 1}`,
+    }));
+
+    setSegments(renamed);
+    if (project) {
+      apiClient.updateProject(project.id, { ...project, segments: renamed }).catch(console.error);
+    }
+
+    setDraggedClipId(null);
+    setDragOverClipId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedClipId(null);
+    setDragOverClipId(null);
   };
 
   const handleQuickClip = () => {
@@ -852,22 +918,34 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {segments.map((seg, i) => {
                           const isEditing = editingClipId === seg.id;
+                          const isDragging = draggedClipId === seg.id;
+                          const isDragOver = dragOverClipId === seg.id;
                           return (
                             <div
                               key={seg.id}
+                              draggable={!isEditing}
+                              onDragStart={(e) => handleDragStart(e, seg.id)}
+                              onDragOver={(e) => handleDragOver(e, seg.id)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDrop(e, seg.id)}
+                              onDragEnd={handleDragEnd}
                               onClick={() => {
                                 if (videoRef.current) seekVideo(seg.start);
                               }}
                               style={{
-                                background: isEditing
-                                  ? 'rgba(245, 158, 11, 0.25)'
-                                  : seg.selected ? 'rgba(16, 185, 129, 0.15)' : colors.surface,
+                                background: isDragOver
+                                  ? 'rgba(59, 130, 246, 0.3)'
+                                  : isEditing
+                                    ? 'rgba(245, 158, 11, 0.25)'
+                                    : seg.selected ? 'rgba(16, 185, 129, 0.15)' : colors.surface,
                                 borderRadius: '10px',
                                 padding: '12px',
-                                border: `2px solid ${isEditing ? colors.accent : seg.selected ? colors.primary : colors.border}`,
-                                cursor: 'pointer',
+                                border: `2px solid ${isDragOver ? colors.secondary : isEditing ? colors.accent : seg.selected ? colors.primary : colors.border}`,
+                                cursor: isDragging ? 'grabbing' : 'grab',
                                 transition: 'all 0.2s ease',
                                 position: 'relative',
+                                opacity: isDragging ? 0.5 : 1,
+                                transform: isDragOver ? 'scale(1.02)' : 'none',
                               }}
                             >
                               {/* Edit mode indicator */}
@@ -882,6 +960,19 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                                 </div>
                               )}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                                {/* Drag handle */}
+                                <div
+                                  style={{
+                                    color: isDragging ? colors.secondary : colors.textMuted,
+                                    cursor: 'grab',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    opacity: 0.6,
+                                  }}
+                                  title="Arrastra para reordenar"
+                                >
+                                  <IoMdReorder size={16} />
+                                </div>
                                 <div
                                   onClick={(e) => { e.stopPropagation(); toggleSegment(seg.id); }}
                                   style={{
