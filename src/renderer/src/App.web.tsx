@@ -1,63 +1,44 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  IoMdCloudDownload, 
-  IoMdCloudUpload, 
-  IoMdTrash, 
-  IoMdGitMerge,
-  IoMdRocket,
-  IoMdFilm,
-  IoMdMusicalNotes,
-  IoMdImages,
-  IoMdClock,
-  IoMdKeypad,
-  IoMdSettings
+import {
+  IoMdCloudDownload,
+  IoMdCloudUpload,
+  IoMdTrash,
+  IoMdPlay,
+  IoMdCut,
+  IoMdDownload,
+  IoMdHelpCircle
 } from 'react-icons/io';
-import { 
-  FiScissors, 
-  FiDownload, 
-  FiShield, 
-  FiZap,
-  FiPlay,
-  FiMonitor,
-  FiGrid
-} from 'react-icons/fi';
-import { 
-  MdAutoDelete, 
-  MdHighQuality,
-  MdStorage,
-  MdVideoLibrary,
-  MdSpeed,
-  MdTouchApp
-} from 'react-icons/md';
-import { FaStar, FaCheckCircle, FaArrowRight } from 'react-icons/fa';
+import { FiScissors, FiUpload } from 'react-icons/fi';
+import { FaGithub } from 'react-icons/fa';
 import DownloadModal from './components/DownloadModal';
 import VideoEditor from './components/VideoEditor';
-import GPUAcceleratedTimeline from './components/GPUAcceleratedTimeline';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
-// Neobrutalist color palette
 const colors = {
-  bg: '#0a0a0a',
-  surface: '#141414',
-  border: '#2a2a2a',
-  accent1: '#00ff88', // Neon green
-  accent2: '#ff6b35', // Orange
-  accent3: '#a855f7', // Purple
-  accent4: '#00d4ff', // Cyan
+  bg: '#0f0f0f',
+  surface: '#1a1a1a',
+  card: '#222222',
+  border: '#333333',
+  primary: '#10b981',
+  secondary: '#3b82f6',
+  accent: '#f59e0b',
+  danger: '#ef4444',
   text: '#ffffff',
-  textMuted: '#888888',
-  danger: '#ff3333',
+  textSecondary: '#a1a1a1',
+  textMuted: '#666666',
 };
+
+// SVG pattern de lagartijas minimalistas
+const lizardPattern = `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23222222' stroke-width='0.8' opacity='0.4'%3E%3Cpath d='M30 15 Q25 18 22 22 L18 20 M22 22 Q20 28 22 32 Q18 35 15 34 M22 32 Q26 36 30 35 Q34 36 38 32 M38 32 Q42 35 45 34 M38 32 Q40 28 38 22 L42 20 M38 22 Q35 18 30 15'/%3E%3Ccircle cx='27' cy='20' r='1'/%3E%3Ccircle cx='33' cy='20' r='1'/%3E%3C/g%3E%3C/svg%3E")`;
 
 export default function App() {
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [downloadedVideoId, setDownloadedVideoId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
-  const [autoCleanup, setAutoCleanup] = useState(true);
-  const [stats, setStats] = useState({ videos: 0, downloads: 0, projects: 0 });
+  const [showTutorial, setShowTutorial] = useState(false);
   const sessionIdRef = useRef<string>(generateSessionId());
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -67,7 +48,7 @@ export default function App() {
         await fetch('/api/system/session/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionIdRef.current, auto_clean: autoCleanup }),
+          body: JSON.stringify({ session_id: sessionIdRef.current, auto_clean: true }),
         });
       } catch (error) {
         console.error('[Session] Failed to start:', error);
@@ -75,7 +56,6 @@ export default function App() {
     };
 
     initSession();
-    loadStats();
 
     heartbeatRef.current = setInterval(async () => {
       try {
@@ -90,7 +70,7 @@ export default function App() {
     const handleUnload = () => {
       navigator.sendBeacon('/api/system/session/end', JSON.stringify({
         session_id: sessionIdRef.current,
-        cleanup: autoCleanup,
+        cleanup: true,
       }));
     };
 
@@ -104,661 +84,452 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    fetch('/api/system/session/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionIdRef.current, auto_clean: autoCleanup }),
-    }).catch(() => {});
-  }, [autoCleanup]);
-
-  const loadStats = async () => {
-    try {
-      const response = await fetch('/api/system/stats');
-      if (response.ok) setStats(await response.json());
-    } catch (error) {}
-  };
-
   const handleDownloadComplete = (download: any) => {
     setDownloadedVideoId(download.video_id);
     setShowDownloadModal(false);
     setShowEditor(true);
-    loadStats();
   };
 
   const handleClearAll = async () => {
-    if (!confirm('DELETE ALL DATA?\n\nThis cannot be undone!')) return;
+    if (!confirm('¿ELIMINAR TODOS LOS DATOS?\n\n¡Esta acción no se puede deshacer!')) return;
     setIsClearing(true);
     try {
       await fetch('/api/system/clear-all', { method: 'DELETE' });
-      loadStats();
     } catch (error: any) {
-      alert(`Failed: ${error.message}`);
+      alert(`Error: ${error.message}`);
     } finally {
       setIsClearing(false);
     }
   };
 
-  const features = [
+  const tutorialSteps = [
     {
-      icon: <IoMdFilm size={32} />,
-      title: 'Lossless Cutting',
-      description: 'Professional I/O workflow for frame-accurate video editing without quality loss',
-      gradient: colors.accent1,
-    },
-    {
-      icon: <IoMdCloudDownload size={32} />,
-      title: 'Smart Downloads',
-      description: 'Download from YouTube, Vimeo, and 1000+ platforms with yt-dlp',
-      gradient: colors.accent4,
+      step: 1,
+      icon: <FiUpload size={32} />,
+      title: 'Sube tu video',
+      description: 'Haz clic en "Subir Video" y selecciona un archivo de tu computadora. También puedes descargar videos de YouTube u otras plataformas.',
     },
     {
-      icon: <FiMonitor size={32} />,
-      title: 'Visual Timeline',
-      description: 'Modern timeline with thumbnails, waveforms, and intuitive controls',
-      gradient: colors.accent2,
+      step: 2,
+      icon: <IoMdPlay size={32} />,
+      title: 'Navega al punto de inicio',
+      description: 'Reproduce el video y pausa donde quieres comenzar tu clip. Usa las flechas ← → para moverte 1 segundo, o Shift+flechas para 0.1 segundos.',
     },
     {
-      icon: <IoMdKeypad size={32} />,
-      title: 'Keyboard Power',
-      description: 'Professional keyboard shortcuts for lightning-fast editing',
-      gradient: colors.accent3,
-    },
-     {
-      icon: <IoMdImages size={32} />,
-      title: 'Screenshot Capture',
-      description: 'Extract high-quality frames from any point in your video',
-      gradient: colors.accent1,
+      step: 3,
+      icon: <span style={{ fontSize: '28px', fontWeight: 'bold' }}>I</span>,
+      title: 'Marca el inicio (IN)',
+      description: 'Presiona la tecla "I" o el botón "I Mark IN" para marcar el punto de inicio de tu clip.',
     },
     {
-      icon: <MdHighQuality size={32} />,
-      title: 'GPU Timeline',
-      description: 'Hardware-accelerated timeline with frame capture and export',
-      gradient: colors.accent4,
+      step: 4,
+      icon: <span style={{ fontSize: '28px', fontWeight: 'bold' }}>O</span>,
+      title: 'Marca el final (OUT)',
+      description: 'Navega al punto final y presiona "O" o el botón "O Mark OUT". ¡Tu clip se creará automáticamente!',
     },
     {
-      icon: <FiGrid size={32} />,
-      title: 'Batch Processing',
-      description: 'Process multiple files simultaneously with powerful automation',
-      gradient: colors.accent4,
+      step: 5,
+      icon: <IoMdCut size={32} />,
+      title: 'Repite para más clips',
+      description: 'Puedes crear múltiples clips. Cada uno aparecerá en el panel lateral derecho. Marca/desmarca los que quieras incluir.',
     },
-  ];
-
-  const shortcuts = [
-    { key: 'Space', action: 'Play/Pause', icon: <FiPlay /> },
-    { key: 'I', action: 'Set Start Point', icon: <FiScissors /> },
-    { key: 'O', action: 'Set End Point', icon: <FiScissors /> },
-    { key: '←/→', action: 'Seek 1 Second', icon: <IoMdClock /> },
-    { key: 'Shift+←/→', action: 'Seek 0.1 Second', icon: <MdSpeed /> },
+    {
+      step: 6,
+      icon: <IoMdDownload size={32} />,
+      title: 'Exporta y descarga',
+      description: 'Elige "Combinado" para un solo archivo o "Separados" para archivos individuales. Haz clic en exportar y luego descarga tu video.',
+    },
   ];
 
   return (
     <div style={{
-      background: colors.bg,
-      fontFamily: "'Inter', 'SF Pro', -apple-system, sans-serif",
-      height: '100vh',
-      overflowY: 'auto',
-      overflowX: 'hidden',
+      background: `${colors.bg} ${lizardPattern}`,
+      backgroundSize: '60px 60px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
     }}>
-      {/* Hero Section */}
-      <motion.header
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        style={{
-          background: colors.surface,
-          borderBottom: `4px solid ${colors.accent1}`,
-          padding: '24px 20px',
-        }}
-      >
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
-            style={{ display: 'flex', alignItems: 'center', gap: '16px' }}
+      {/* Header Simple */}
+      <header style={{
+        background: colors.surface,
+        padding: '20px',
+        borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '36px' }}>✂️</span>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '24px', color: colors.text, fontWeight: '700' }}>
+                Cortador de Video
+              </h1>
+              <p style={{ margin: 0, fontSize: '12px', color: colors.textMuted }}>
+                Sin pérdida de calidad
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowTutorial(true)}
+            style={{
+              background: colors.card,
+              border: `1px solid ${colors.border}`,
+              color: colors.text,
+              padding: '10px 16px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '14px',
+            }}
           >
-            <div style={{
-              width: '64px',
-              height: '64px',
-              background: `linear-gradient(135deg, ${colors.accent1}, ${colors.accent4})`,
-              border: `3px solid ${colors.accent1}`,
+            <IoMdHelpCircle size={18} />
+            ¿Cómo funciona?
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px 20px',
+        maxWidth: '600px',
+        margin: '0 auto',
+        width: '100%',
+      }}>
+        {/* Welcome Message */}
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <h2 style={{
+            color: colors.text,
+            fontSize: '28px',
+            fontWeight: '600',
+            marginBottom: '12px',
+          }}>
+            Corta videos fácilmente
+          </h2>
+          <p style={{
+            color: colors.textSecondary,
+            fontSize: '16px',
+            lineHeight: '1.6',
+            maxWidth: '450px',
+            margin: '0 auto',
+          }}>
+            Selecciona las partes que quieres conservar de tu video y expórtalas sin perder calidad.
+          </p>
+        </div>
+
+        {/* Main Action Buttons */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          width: '100%',
+          maxWidth: '400px',
+        }}>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowEditor(true)}
+            style={{
+              background: colors.primary,
+              color: '#fff',
+              padding: '20px 32px',
+              borderRadius: '12px',
+              fontSize: '18px',
+              fontWeight: '600',
+              border: 'none',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '32px',
-              borderRadius: '12px',
-              boxShadow: `0 8px 32px rgba(0, 255, 136, 0.3)`,
-            }}>
-              🎬
-            </div>
-            <div>
-              <h1 style={{
-                margin: 0,
-                fontSize: '36px',
-                fontWeight: '900',
-                background: `linear-gradient(135deg, ${colors.accent1}, ${colors.accent4})`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                letterSpacing: '-1px',
-                textTransform: 'uppercase',
-                textShadow: `0 0 30px rgba(0, 255, 136, 0.3)`,
-              }}>
-                LosslessCut
-              </h1>
-              <p style={{
-                margin: '4px 0 0 0',
-                fontSize: '14px',
-                color: colors.accent1,
-                fontWeight: '700',
-                textTransform: 'uppercase',
-                letterSpacing: '2px',
-              }}>
-                Professional Web Edition
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Stats badges */}
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-            style={{ display: 'flex', gap: '12px' }}
-          >
-            {[
-              { label: 'VID', value: stats.videos, color: colors.accent1 },
-              { label: 'DL', value: stats.downloads, color: colors.accent2 },
-              { label: 'PRJ', value: stats.projects, color: colors.accent3 },
-            ].map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.6 + index * 0.1 }}
-                style={{
-                  background: colors.bg,
-                  border: `2px solid ${stat.color}`,
-                  padding: '8px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  borderRadius: '8px',
-                }}
-              >
-                <span style={{ color: stat.color, fontSize: '20px', fontWeight: '900' }}>{stat.value}</span>
-                <span style={{ color: colors.textMuted, fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{stat.label}</span>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </motion.header>
-
-      {/* Main Content */}
-      <main style={{ 
-        maxWidth: '1200px', 
-        margin: '0 auto', 
-        padding: '60px 20px',
-        minHeight: 'calc(100vh - 200px)',
-      }}>
-        {/* Hero CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.8 }}
-          style={{ textAlign: 'center', marginBottom: '80px' }}
-        >
-          <h2 style={{
-            fontSize: '3em',
-            fontWeight: 'bold',
-            background: `linear-gradient(135deg, ${colors.accent1}, ${colors.accent4})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            marginBottom: '1em',
-            textShadow: `0 0 30px rgba(0, 255, 136, 0.3)`,
-          }}>
-            <IoMdRocket style={{ marginRight: '0.2em', verticalAlign: 'middle' }} />
-            Edit Like a Pro
-          </h2>
-          <p style={{
-            fontSize: '1.3em',
-            color: colors.textMuted,
-            marginBottom: '2em',
-            maxWidth: '600px',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            lineHeight: '1.6',
-          }}>
-            Professional video editing made simple. Cut, trim, and perfect your media with lossless quality and lightning-fast performance.
-          </p>
-          
-          <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <motion.button
-              whileHover={{ scale: 1.05, boxShadow: `0 8px 30px rgba(0, 255, 136, 0.4)` }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowEditor(true)}
-              style={{
-                background: `linear-gradient(135deg, ${colors.accent1}, ${colors.accent4})`,
-                color: colors.bg,
-                padding: '16px 32px',
-                borderRadius: '50px',
-                fontSize: '1.2em',
-                fontWeight: 'bold',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '12px',
-                transition: 'all 0.3s ease',
-                boxShadow: `0 4px 20px rgba(0, 255, 136, 0.3)`,
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-              }}
-            >
-              <MdVideoLibrary />
-              Start Editing Now
-              <FaArrowRight />
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.05, boxShadow: `0 8px 30px rgba(0, 212, 255, 0.4)` }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowDownloadModal(true)}
-              style={{
-                background: `linear-gradient(135deg, ${colors.accent4}, ${colors.accent2})`,
-                color: colors.bg,
-                padding: '16px 32px',
-                borderRadius: '50px',
-                fontSize: '1.2em',
-                fontWeight: 'bold',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '12px',
-                transition: 'all 0.3s ease',
-                boxShadow: `0 4px 20px rgba(0, 212, 255, 0.3)`,
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-              }}
-            >
-              <IoMdCloudDownload />
-              Download Video
-              <FaArrowRight />
-            </motion.button>
-          </div>
-        </motion.div>
-
-        {/* Features Grid */}
-        <div style={{ marginBottom: '80px' }}>
-          <motion.h3
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.0 }}
-            style={{
-              fontSize: '2em',
-              fontWeight: 'bold',
-              color: colors.text,
-              textAlign: 'center',
-              marginBottom: '3em',
-              textTransform: 'uppercase',
-              letterSpacing: '2px',
+              gap: '12px',
             }}
           >
-            <FiZap style={{ marginRight: '0.5em', verticalAlign: 'middle', color: colors.accent3 }} />
-            Powerful Features
-          </motion.h3>
-          
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', 
-            gap: '30px' 
+            <IoMdCloudUpload size={24} />
+            Subir Video
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowDownloadModal(true)}
+            style={{
+              background: colors.secondary,
+              color: '#fff',
+              padding: '20px 32px',
+              borderRadius: '12px',
+              fontSize: '18px',
+              fontWeight: '600',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+            }}
+          >
+            <IoMdCloudDownload size={24} />
+            Descargar de Internet
+          </motion.button>
+        </div>
+
+        {/* Quick Tutorial Preview */}
+        <div style={{
+          marginTop: '48px',
+          padding: '24px',
+          background: colors.surface,
+          borderRadius: '12px',
+          border: `1px solid ${colors.border}`,
+          width: '100%',
+          maxWidth: '400px',
+        }}>
+          <h3 style={{
+            color: colors.text,
+            fontSize: '16px',
+            fontWeight: '600',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}>
-            {features.map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.2 + index * 0.1 }}
-                whileHover={{ 
-                  scale: 1.05, 
-                  boxShadow: `0 12px 40px rgba(0, 255, 136, 0.2)`,
-                }}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  backdropFilter: 'blur(10px)',
-                  border: `1px solid rgba(255, 255, 255, 0.1)`,
-                  borderRadius: '20px',
-                  padding: '40px 30px',
-                  textAlign: 'center',
-                  transition: 'all 0.3s ease',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: '4px',
-                  background: `linear-gradient(90deg, ${feature.gradient}, transparent)`,
-                }} />
-                <div style={{
-                  fontSize: '3em',
-                  marginBottom: '1.5em',
-                  background: `linear-gradient(135deg, ${feature.gradient}, ${colors.accent4})`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
+            <FiScissors size={18} color={colors.primary} />
+            Atajos de teclado
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[
+              { key: 'Espacio', action: 'Reproducir / Pausar' },
+              { key: 'I', action: 'Marcar inicio del clip' },
+              { key: 'O', action: 'Marcar fin y crear clip' },
+              { key: '← →', action: 'Avanzar/retroceder 1 seg' },
+            ].map((item) => (
+              <div key={item.key} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span style={{ color: colors.textSecondary, fontSize: '14px' }}>{item.action}</span>
+                <span style={{
+                  background: colors.card,
+                  color: colors.primary,
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  fontFamily: 'monospace',
                 }}>
-                  {feature.icon}
-                </div>
-                <h4 style={{
-                  fontSize: '1.4em',
-                  fontWeight: 'bold',
-                  color: colors.text,
-                  marginBottom: '1em',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}>
-                  {feature.title}
-                </h4>
-                <p style={{
-                  fontSize: '1em',
-                  color: colors.textMuted,
-                  lineHeight: '1.6',
-                  margin: 0,
-                }}>
-                  {feature.description}
-                </p>
-              </motion.div>
+                  {item.key}
+                </span>
+              </div>
             ))}
           </div>
         </div>
 
-        {/* Quick Actions - Simplified */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.8 }}
-          style={{ 
-            textAlign: 'center',
-            marginBottom: '80px' 
-          }}
-        >
-          <p style={{
-            fontSize: '1.2em',
-            color: colors.textMuted,
-            marginBottom: '2em',
-          }}>
-            Or choose an action below:
-          </p>
-          
-          <div style={{ 
-            display: 'flex', 
-            gap: '20px', 
-            justifyContent: 'center',
-            flexWrap: 'wrap' 
-          }}>
-            <motion.button
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setShowDownloadModal(true)}
-              style={{
-                background: colors.surface,
-                border: `2px solid ${colors.accent4}`,
-                padding: '20px 30px',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                fontSize: '1.1em',
-                fontWeight: 'bold',
-                color: colors.text,
-              }}
-            >
-              <IoMdCloudDownload size={24} color={colors.accent4} />
-              Download Video
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setShowEditor(true)}
-              style={{
-                background: colors.surface,
-                border: `2px solid ${colors.accent1}`,
-                padding: '20px 30px',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                fontSize: '1.1em',
-                fontWeight: 'bold',
-                color: colors.text,
-              }}
-            >
-              <IoMdCloudUpload size={24} color={colors.accent1} />
-              Upload & Edit
-            </motion.button>
-          </div>
-        </motion.div>
-
-        {/* Keyboard Shortcuts */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 2.0 }}
+        {/* Clear Data Button */}
+        <button
+          onClick={handleClearAll}
+          disabled={isClearing}
           style={{
-            background: 'rgba(0, 0, 0, 0.3)',
-            backdropFilter: 'blur(10px)',
-            border: `1px solid rgba(255, 255, 255, 0.1)`,
-            borderRadius: '20px',
-            padding: '40px',
-            marginBottom: '80px',
+            marginTop: '32px',
+            background: 'transparent',
+            border: `1px solid ${colors.danger}`,
+            color: colors.danger,
+            padding: '10px 20px',
+            borderRadius: '8px',
+            cursor: isClearing ? 'not-allowed' : 'pointer',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            opacity: isClearing ? 0.5 : 1,
           }}
         >
-          <h3 style={{
-            fontSize: '1.8em',
-            marginBottom: '2em',
-            color: colors.text,
-            textAlign: 'center',
-            textTransform: 'uppercase',
-            letterSpacing: '2px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-          }}>
-            <IoMdKeypad />
-            Essential Shortcuts
-          </h3>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-            gap: '20px' 
-          }}>
-            {shortcuts.map((shortcut, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 2.2 + index * 0.1 }}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '16px 20px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: '12px',
-                  border: `1px solid rgba(255, 255, 255, 0.1)`,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: colors.textMuted }}>
-                  <span style={{ color: colors.accent1 }}>{shortcut.icon}</span>
-                  <span>{shortcut.action}</span>
-                </div>
-                <div style={{
-                  background: colors.accent1,
-                  color: colors.bg,
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  fontFamily: 'monospace',
-                }}>
-                  {shortcut.key}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Settings Row */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 2.4 }}
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}
-        >
-          {/* Auto-Cleanup */}
-          <div style={{
-            background: colors.surface,
-            border: `3px solid ${autoCleanup ? colors.accent1 : colors.border}`,
-            padding: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderRadius: '16px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                background: autoCleanup ? colors.accent1 : colors.border,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '12px',
-              }}>
-                <MdAutoDelete size={24} color={colors.bg} />
-              </div>
-              <div>
-                <h4 style={{ color: colors.text, margin: 0, fontSize: '14px', fontWeight: '700', textTransform: 'uppercase' }}>
-                  Auto-Delete
-                </h4>
-                <p style={{ color: colors.textMuted, margin: 0, fontSize: '12px' }}>
-                  {autoCleanup ? 'ON - Files deleted on exit' : 'OFF - Files persist'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setAutoCleanup(!autoCleanup)}
-              style={{
-                width: '64px',
-                height: '36px',
-                background: autoCleanup ? colors.accent1 : colors.border,
-                border: 'none',
-                cursor: 'pointer',
-                position: 'relative',
-                transition: 'background 0.2s',
-                borderRadius: '18px',
-              }}
-            >
-              <div style={{
-                width: '28px',
-                height: '28px',
-                background: colors.bg,
-                position: 'absolute',
-                top: '4px',
-                left: autoCleanup ? '32px' : '4px',
-                transition: 'left 0.2s',
-                borderRadius: '50%',
-              }} />
-            </button>
-          </div>
-
-          {/* Danger Zone */}
-          <div style={{
-            background: colors.surface,
-            border: `3px solid ${colors.danger}`,
-            padding: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderRadius: '16px',
-          }}>
-            <div>
-              <h4 style={{ color: colors.danger, margin: '0 0 4px 0', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase' }}>
-                Danger Zone
-              </h4>
-              <p style={{ color: colors.textMuted, margin: 0, fontSize: '12px' }}>
-                Delete all data now
-              </p>
-            </div>
-            <button
-              onClick={handleClearAll}
-              disabled={isClearing}
-              style={{
-                background: 'transparent',
-                border: `2px solid ${colors.danger}`,
-                color: colors.danger,
-                padding: '10px 20px',
-                cursor: isClearing ? 'not-allowed' : 'pointer',
-                fontSize: '12px',
-                fontWeight: '900',
-                textTransform: 'uppercase',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.15s',
-                opacity: isClearing ? 0.5 : 1,
-                borderRadius: '8px',
-              }}
-              onMouseOver={(e) => {
-                if (!isClearing) {
-                  e.currentTarget.style.background = colors.danger;
-                  e.currentTarget.style.color = colors.bg;
-                }
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = colors.danger;
-              }}
-            >
-              <IoMdTrash size={16} />
-              {isClearing ? 'Clearing...' : 'Clear All'}
-            </button>
-          </div>
-        </motion.div>
+          <IoMdTrash size={16} />
+          {isClearing ? 'Limpiando...' : 'Limpiar todos los datos'}
+        </button>
       </main>
 
-      {/* Footer */}
-      <motion.footer
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 2.6 }}
-        style={{
-          borderTop: `2px solid ${colors.border}`,
-          padding: '30px 20px',
-          textAlign: 'center',
-          marginTop: 'auto',
-        }}
-      >
-        <p style={{ color: colors.textMuted, margin: 0, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          <FaStar style={{ color: colors.accent1, marginRight: '8px' }} />
-          Powered by FFmpeg & yt-dlp
-          <FaStar style={{ color: colors.accent1, marginLeft: '8px' }} />
+      {/* Footer with Credits */}
+      <footer style={{
+        borderTop: `1px solid ${colors.border}`,
+        padding: '20px',
+        textAlign: 'center',
+      }}>
+        <p style={{
+          color: colors.textMuted,
+          fontSize: '13px',
+          margin: '0 0 8px 0',
+        }}>
+          Hecho por{' '}
+          <a
+            href="https://github.com/jhoniwana"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: colors.primary, textDecoration: 'none' }}
+          >
+            <FaGithub style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+            Jhon
+          </a>
         </p>
-      </motion.footer>
+        <p style={{
+          color: colors.textMuted,
+          fontSize: '12px',
+          margin: 0,
+        }}>
+          Basado en{' '}
+          <a
+            href="https://github.com/mifi/lossless-cut"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: colors.secondary, textDecoration: 'none' }}
+          >
+            LosslessCut
+          </a>
+          {' '}• Powered by FFmpeg
+        </p>
+      </footer>
+
+      {/* Tutorial Modal */}
+      <AnimatePresence>
+        {showTutorial && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.9)',
+              zIndex: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              overflowY: 'auto',
+            }}
+            onClick={() => setShowTutorial(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: colors.surface,
+                borderRadius: '16px',
+                padding: '32px',
+                maxWidth: '600px',
+                width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ color: colors.text, margin: 0, fontSize: '22px', fontWeight: '600' }}>
+                  ¿Cómo usar el cortador de video?
+                </h2>
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: colors.textMuted,
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {tutorialSteps.map((step) => (
+                  <div
+                    key={step.step}
+                    style={{
+                      display: 'flex',
+                      gap: '16px',
+                      padding: '16px',
+                      background: colors.card,
+                      borderRadius: '12px',
+                      border: `1px solid ${colors.border}`,
+                    }}
+                  >
+                    <div style={{
+                      width: '56px',
+                      height: '56px',
+                      background: colors.primary,
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff',
+                      flexShrink: 0,
+                    }}>
+                      {step.icon}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginBottom: '6px',
+                      }}>
+                        <span style={{
+                          background: colors.primary,
+                          color: '#fff',
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                        }}>
+                          {step.step}
+                        </span>
+                        <h4 style={{ color: colors.text, margin: 0, fontSize: '15px', fontWeight: '600' }}>
+                          {step.title}
+                        </h4>
+                      </div>
+                      <p style={{
+                        color: colors.textSecondary,
+                        margin: 0,
+                        fontSize: '14px',
+                        lineHeight: '1.5',
+                      }}>
+                        {step.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setShowTutorial(false)}
+                style={{
+                  width: '100%',
+                  marginTop: '24px',
+                  background: colors.primary,
+                  color: '#fff',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                ¡Entendido, empezar!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <DownloadModal
         isOpen={showDownloadModal}
@@ -772,7 +543,6 @@ export default function App() {
             onClose={() => {
               setShowEditor(false);
               setDownloadedVideoId(null);
-              loadStats();
             }}
             initialVideoId={downloadedVideoId}
           />

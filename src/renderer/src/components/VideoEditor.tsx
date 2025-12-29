@@ -59,6 +59,13 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [dragStartTime, setDragStartTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Export options
+  const [exportSeparate, setExportSeparate] = useState(false); // false = merged, true = separate files
+
+  // Preview segments mode
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [currentPreviewSegmentIndex, setCurrentPreviewSegmentIndex] = useState(0);
+
   // Refs
   const isPlayingRef = useRef(false);
   const isSeekingRef = useRef(false);
@@ -89,7 +96,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         try {
           setVideoUrl(apiClient.getVideoStreamUrl(initialVideoId));
           setVideoId(initialVideoId);
-          const proj = await apiClient.createProject('Downloaded Video', initialVideoId);
+          const proj = await apiClient.createProject('Video Descargado', initialVideoId);
           setProject(proj);
           setSegments(proj.segments || []);
         } catch (e) { console.error(e); }
@@ -356,16 +363,79 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     setIsExporting(true);
     setExportProgress(0);
     try {
+      const selectedSegs = segments.filter(s => s.selected);
       const op = await apiClient.exportProject(project.id, {
-        segment_ids: segments.filter(s => s.selected).map(s => s.id),
-        merge_segments: true,
-        export_separate: false,
+        segment_ids: selectedSegs.map(s => s.id),
+        merge_segments: !exportSeparate,
+        export_separate: exportSeparate,
         format: 'mp4',
         output_name: `${videoFile?.name.split('.')[0] || 'video'}_cut`,
       });
       setCurrentOperation(op);
     } catch { setIsExporting(false); }
   };
+
+  // Preview selected segments sequentially
+  const startPreview = () => {
+    const selectedSegs = segments.filter(s => s.selected);
+    if (selectedSegs.length === 0 || !videoRef.current) return;
+
+    setIsPreviewMode(true);
+    setCurrentPreviewSegmentIndex(0);
+
+    // Jump to first segment
+    videoRef.current.currentTime = selectedSegs[0].start;
+    videoRef.current.play();
+  };
+
+  const stopPreview = () => {
+    setIsPreviewMode(false);
+    setCurrentPreviewSegmentIndex(0);
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  };
+
+  // Handle preview mode time updates
+  useEffect(() => {
+    if (!isPreviewMode || !videoRef.current) return;
+
+    const selectedSegs = segments.filter(s => s.selected);
+    if (selectedSegs.length === 0) {
+      setIsPreviewMode(false);
+      return;
+    }
+
+    const handlePreviewUpdate = () => {
+      if (!videoRef.current || !isPreviewMode) return;
+
+      const currentSeg = selectedSegs[currentPreviewSegmentIndex];
+      if (!currentSeg) {
+        stopPreview();
+        return;
+      }
+
+      const segEnd = currentSeg.end ?? duration;
+
+      // Check if we've passed the end of current segment
+      if (videoRef.current.currentTime >= segEnd - 0.05) {
+        // Move to next segment
+        const nextIndex = currentPreviewSegmentIndex + 1;
+        if (nextIndex < selectedSegs.length) {
+          setCurrentPreviewSegmentIndex(nextIndex);
+          videoRef.current.currentTime = selectedSegs[nextIndex].start;
+        } else {
+          // End of all segments
+          stopPreview();
+        }
+      }
+    };
+
+    videoRef.current.addEventListener('timeupdate', handlePreviewUpdate);
+    return () => {
+      videoRef.current?.removeEventListener('timeupdate', handlePreviewUpdate);
+    };
+  }, [isPreviewMode, currentPreviewSegmentIndex, segments, duration]);
 
   const handleDownload = () => {
     currentOperation?.output_files?.forEach((file: string) => {
@@ -501,7 +571,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowHelp(true)} style={iconBtn} title="Help">
+          <button onClick={() => setShowHelp(true)} style={iconBtn} title="Ayuda">
             <IoMdHelpCircle size={20} />
           </button>
           <button onClick={onClose} style={iconBtn}>
@@ -519,21 +589,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           <div style={{
             background: colors.surface, borderRadius: '16px', padding: '24px', maxWidth: '400px', width: '100%',
           }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ color: colors.text, margin: '0 0 16px', fontSize: '20px' }}>How to Use</h2>
+            <h2 style={{ color: colors.text, margin: '0 0 16px', fontSize: '20px' }}>Cómo usar</h2>
             <div style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.8' }}>
-              <p><strong style={{ color: colors.primary }}>1.</strong> Upload a video file</p>
-              <p><strong style={{ color: colors.primary }}>2.</strong> Navigate to where you want to start</p>
-              <p><strong style={{ color: colors.primary }}>3.</strong> Press <strong style={{ color: colors.accent }}>I</strong> button (In point)</p>
-              <p><strong style={{ color: colors.primary }}>4.</strong> Navigate to where you want to end</p>
-              <p><strong style={{ color: colors.primary }}>5.</strong> Press <strong style={{ color: colors.secondary }}>O</strong> button (Out point)</p>
-              <p><strong style={{ color: colors.primary }}>6.</strong> Tap <strong>Export</strong> to save</p>
+              <p><strong style={{ color: colors.primary }}>1.</strong> Sube un video</p>
+              <p><strong style={{ color: colors.primary }}>2.</strong> Navega al punto de inicio</p>
+              <p><strong style={{ color: colors.primary }}>3.</strong> Presiona <strong style={{ color: colors.accent }}>I</strong> (Marcar inicio)</p>
+              <p><strong style={{ color: colors.primary }}>4.</strong> Navega al punto final</p>
+              <p><strong style={{ color: colors.primary }}>5.</strong> Presiona <strong style={{ color: colors.secondary }}>O</strong> (Marcar fin)</p>
+              <p><strong style={{ color: colors.primary }}>6.</strong> Toca <strong>Exportar</strong> para guardar</p>
               <hr style={{ border: 'none', borderTop: `1px solid ${colors.border}`, margin: '16px 0' }} />
               <p style={{ fontSize: '13px', color: colors.textMuted }}>
-                <strong>Keyboard:</strong> Space=Play, I/O=Cut, ←→=1s, Shift+←→=0.1s
+                <strong>Teclado:</strong> Espacio=Play, I/O=Cortar, ←→=1s, Shift+←→=0.1s
               </p>
             </div>
             <button onClick={() => setShowHelp(false)} style={{ ...btn(colors.primary), marginTop: '16px' }}>
-              Got it!
+              ¡Entendido!
             </button>
           </div>
         </div>
@@ -555,11 +625,11 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
               <FiUpload size={40} color={colors.primary} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <h2 style={{ color: colors.text, margin: '0 0 8px', fontSize: '24px' }}>Upload Video</h2>
-              <p style={{ color: colors.textMuted, margin: 0 }}>Select a video to start cutting</p>
+              <h2 style={{ color: colors.text, margin: '0 0 8px', fontSize: '24px' }}>Subir Video</h2>
+              <p style={{ color: colors.textMuted, margin: 0 }}>Selecciona un video para comenzar</p>
             </div>
             <label style={{ ...btn(colors.primary), maxWidth: '280px', cursor: 'pointer' }}>
-              <FiUpload size={20} /> Choose Video
+              <FiUpload size={20} /> Elegir Video
               <input type="file" accept="video/*,audio/*" onChange={handleUpload} style={{ display: 'none' }} />
             </label>
           </div>
@@ -596,6 +666,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 }}>
                   {fmtFull(currentTime)}
                 </div>
+
+                {/* Preview Mode Indicator */}
+                {isPreviewMode && (
+                  <div style={{
+                    position: 'absolute', bottom: '12px', left: '12px',
+                    background: 'rgba(239, 68, 68, 0.95)',
+                    borderRadius: '6px', padding: '8px 14px',
+                    color: '#fff', fontSize: '12px', fontWeight: '600',
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    animation: 'pulse 1.5s infinite',
+                  }}>
+                    <span style={{ width: '8px', height: '8px', background: '#fff', borderRadius: '50%' }} />
+                    VISTA PREVIA ({currentPreviewSegmentIndex + 1}/{segments.filter(s => s.selected).length})
+                  </div>
+                )}
 
                 {/* Cut indicator */}
                 {pendingCutStart !== null && (
@@ -656,7 +741,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     <>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
                         <MdPlaylistPlay size={20} />
-                        Your Clips ({segments.length})
+                        Tus Clips ({segments.length})
                       </span>
                       <FiChevronRight size={20} />
                     </>
@@ -758,8 +843,87 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       fontSize: '11px', color: colors.textMuted,
                       marginBottom: '8px', textAlign: 'center',
                     }}>
-                      {selectedCount} of {segments.length} clips selected
+                      {selectedCount} de {segments.length} clips seleccionados
                     </div>
+
+                    {/* Preview Button */}
+                    <button
+                      onClick={isPreviewMode ? stopPreview : startPreview}
+                      disabled={selectedCount === 0}
+                      style={{
+                        width: '100%',
+                        marginBottom: '8px',
+                        background: isPreviewMode ? colors.danger : colors.accent,
+                        color: isPreviewMode ? '#fff' : '#000',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '10px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
+                        opacity: selectedCount === 0 ? 0.5 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      {isPreviewMode ? (
+                        <>
+                          <IoMdPause size={16} />
+                          Detener
+                        </>
+                      ) : (
+                        <>
+                          <IoMdPlay size={16} />
+                          Ver Clips
+                        </>
+                      )}
+                    </button>
+
+                    {/* Export Mode Toggle */}
+                    <div style={{
+                      display: 'flex',
+                      gap: '4px',
+                      marginBottom: '8px',
+                      background: colors.card,
+                      borderRadius: '8px',
+                      padding: '4px',
+                    }}>
+                      <button
+                        onClick={() => setExportSeparate(false)}
+                        style={{
+                          flex: 1,
+                          background: !exportSeparate ? colors.primary : 'transparent',
+                          color: !exportSeparate ? '#fff' : colors.textMuted,
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '8px 4px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Combinado
+                      </button>
+                      <button
+                        onClick={() => setExportSeparate(true)}
+                        style={{
+                          flex: 1,
+                          background: exportSeparate ? colors.secondary : 'transparent',
+                          color: exportSeparate ? '#fff' : colors.textMuted,
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '8px 4px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Separados
+                      </button>
+                    </div>
+
                     <button
                       onClick={handleExport}
                       disabled={isExporting || selectedCount === 0}
@@ -781,11 +945,11 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       }}
                     >
                       {isExporting ? (
-                        <>Exporting... {Math.round(exportProgress)}%</>
+                        <>Exportando... {Math.round(exportProgress)}%</>
                       ) : (
                         <>
                           <IoMdDownload size={18} />
-                          Export {selectedCount} Clip{selectedCount !== 1 ? 's' : ''}
+                          Exportar {exportSeparate ? `${selectedCount} Archivos` : 'Combinado'}
                         </>
                       )}
                     </button>
@@ -810,7 +974,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                         }}
                       >
                         <IoMdDownload size={16} />
-                        Download Ready!
+                        ¡Descargar!
                       </button>
                     )}
                   </div>
@@ -939,10 +1103,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     fontWeight: '600',
                     gap: '6px',
                   }}
-                  title="Set Start Point (I)"
+                  title="Marcar punto de inicio (I)"
                 >
                   <span style={{ fontWeight: '800', fontSize: '16px' }}>I</span>
-                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Mark IN</span>
+                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Inicio</span>
                 </button>
 
                 {/* O - Set Out Point */}
@@ -961,10 +1125,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     fontWeight: '600',
                     gap: '6px',
                   }}
-                  title="Set End Point & Create Clip (O)"
+                  title="Marcar fin y crear clip (O)"
                 >
                   <span style={{ fontWeight: '800', fontSize: '16px' }}>O</span>
-                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Mark OUT</span>
+                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Fin</span>
                 </button>
 
                 {/* Divider */}
