@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack } from 'react-icons/io';
-import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft } from 'react-icons/fi';
-import { MdContentCut, MdPlaylistPlay } from 'react-icons/md';
+import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate } from 'react-icons/io';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2 } from 'react-icons/fi';
+import { MdContentCut, MdPlaylistPlay, MdEdit } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
 import IntroOutroSelector from './IntroOutroSelector';
 
@@ -66,6 +66,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentPreviewSegmentIndex, setCurrentPreviewSegmentIndex] = useState(0);
 
+  // Edit mode - when editing an existing clip
+  const [editingClipId, setEditingClipId] = useState<string | null>(null);
+
   // Refs
   const isPlayingRef = useRef(false);
   const isSeekingRef = useRef(false);
@@ -73,6 +76,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const segmentsRef = useRef<Segment[]>([]);
   const durationRef = useRef<number>(0);
   const projectRef = useRef<Project | null>(null);
+  const editingClipIdRef = useRef<string | null>(null);
 
   // Keep refs in sync
   useEffect(() => { pendingCutStartRef.current = pendingCutStart; }, [pendingCutStart]);
@@ -80,6 +84,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   useEffect(() => { durationRef.current = duration; }, [duration]);
   useEffect(() => { projectRef.current = project; }, [project]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { editingClipIdRef.current = editingClipId; }, [editingClipId]);
 
   // Check mobile
   useEffect(() => {
@@ -138,14 +143,35 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           break;
         case 'i':
           e.preventDefault();
-          // Set start point directly using video's current time
-          setPendingCutStart(time);
+          // If editing a clip, update its start time
+          if (editingClipIdRef.current) {
+            const updated = segmentsRef.current.map(s =>
+              s.id === editingClipIdRef.current ? { ...s, start: time } : s
+            );
+            setSegments(updated);
+            if (projectRef.current) {
+              apiClient.updateProject(projectRef.current.id, { ...projectRef.current, segments: updated }).catch(console.error);
+            }
+          } else {
+            // Set start point directly using video's current time
+            setPendingCutStart(time);
+          }
           setCurrentTime(time);
           break;
         case 'o':
           e.preventDefault();
-          // Create clip using video's current time and ref for pending start
-          {
+          // If editing a clip, update its end time
+          if (editingClipIdRef.current) {
+            const updated = segmentsRef.current.map(s =>
+              s.id === editingClipIdRef.current ? { ...s, end: time } : s
+            );
+            setSegments(updated);
+            setEditingClipId(null); // Exit edit mode after setting end
+            if (projectRef.current) {
+              apiClient.updateProject(projectRef.current.id, { ...projectRef.current, segments: updated }).catch(console.error);
+            }
+          } else {
+            // Create clip using video's current time and ref for pending start
             const end = time;
             const start = pendingCutStartRef.current ?? 0;
             if (Math.abs(end - start) >= 0.1) {
@@ -163,8 +189,14 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
               }
             }
             setPendingCutStart(null);
-            setCurrentTime(end);
           }
+          setCurrentTime(time);
+          break;
+        case 'escape':
+          e.preventDefault();
+          // Cancel edit mode
+          setEditingClipId(null);
+          setPendingCutStart(null);
           break;
       }
     };
@@ -318,13 +350,34 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
   const handleMarkStart = () => {
     const time = videoRef.current?.currentTime ?? currentTime;
-    setPendingCutStart(time);
+    // If editing a clip, update its start time
+    if (editingClipId) {
+      const updated = segments.map(s =>
+        s.id === editingClipId ? { ...s, start: time } : s
+      );
+      setSegments(updated);
+      if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
+    } else {
+      setPendingCutStart(time);
+    }
     setCurrentTime(time);
   };
 
   const handleMarkEnd = () => {
     const end = videoRef.current?.currentTime ?? currentTime;
     setCurrentTime(end);
+
+    // If editing a clip, update its end time
+    if (editingClipId) {
+      const updated = segments.map(s =>
+        s.id === editingClipId ? { ...s, end } : s
+      );
+      setSegments(updated);
+      setEditingClipId(null); // Exit edit mode
+      if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
+      return;
+    }
+
     const start = pendingCutStart ?? 0;
     if (Math.abs(end - start) < 0.1) {
       setPendingCutStart(null);
@@ -341,6 +394,22 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     setSegments(updated);
     setPendingCutStart(null);
     if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
+  };
+
+  // Start editing a clip
+  const startEditingClip = (clipId: string) => {
+    const clip = segments.find(s => s.id === clipId);
+    if (clip && videoRef.current) {
+      setEditingClipId(clipId);
+      setPendingCutStart(null); // Clear any pending cut
+      videoRef.current.currentTime = clip.start;
+      setCurrentTime(clip.start);
+    }
+  };
+
+  // Cancel editing
+  const cancelEditing = () => {
+    setEditingClipId(null);
   };
 
   const handleQuickClip = () => {
@@ -682,8 +751,22 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   </div>
                 )}
 
+                {/* Edit mode indicator */}
+                {editingClipId && (
+                  <div style={{
+                    position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
+                    background: colors.accent, borderRadius: '8px', padding: '8px 12px',
+                    color: '#000', fontSize: '13px', fontWeight: '600',
+                    transition: 'right 0.3s ease',
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                  }}>
+                    <FiEdit2 size={16} />
+                    Editando {segments.find(s => s.id === editingClipId)?.name} — I=Inicio, O=Fin, Esc=Cancelar
+                  </div>
+                )}
+
                 {/* Cut indicator */}
-                {pendingCutStart !== null && (
+                {pendingCutStart !== null && !editingClipId && (
                   <div style={{
                     position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
                     background: colors.accent, borderRadius: '8px', padding: '8px 12px',
@@ -767,66 +850,113 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {segments.map((seg, i) => (
-                          <div
-                            key={seg.id}
-                            onClick={() => {
-                              if (videoRef.current) seekVideo(seg.start);
-                            }}
-                            style={{
-                              background: seg.selected ? 'rgba(16, 185, 129, 0.15)' : colors.surface,
-                              borderRadius: '10px',
-                              padding: '12px',
-                              border: `1px solid ${seg.selected ? colors.primary : colors.border}`,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                              <div
-                                onClick={(e) => { e.stopPropagation(); toggleSegment(seg.id); }}
-                                style={{
-                                  width: '22px', height: '22px', borderRadius: '6px',
-                                  background: seg.selected ? colors.primary : 'transparent',
-                                  border: `2px solid ${seg.selected ? colors.primary : colors.border}`,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  cursor: 'pointer', flexShrink: 0,
-                                }}
-                              >
-                                {seg.selected && <IoMdCheckmark size={14} color="#fff" />}
+                        {segments.map((seg, i) => {
+                          const isEditing = editingClipId === seg.id;
+                          return (
+                            <div
+                              key={seg.id}
+                              onClick={() => {
+                                if (videoRef.current) seekVideo(seg.start);
+                              }}
+                              style={{
+                                background: isEditing
+                                  ? 'rgba(245, 158, 11, 0.25)'
+                                  : seg.selected ? 'rgba(16, 185, 129, 0.15)' : colors.surface,
+                                borderRadius: '10px',
+                                padding: '12px',
+                                border: `2px solid ${isEditing ? colors.accent : seg.selected ? colors.primary : colors.border}`,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                position: 'relative',
+                              }}
+                            >
+                              {/* Edit mode indicator */}
+                              {isEditing && (
+                                <div style={{
+                                  position: 'absolute', top: '-8px', right: '8px',
+                                  background: colors.accent, color: '#000',
+                                  padding: '2px 8px', borderRadius: '4px',
+                                  fontSize: '10px', fontWeight: '700',
+                                }}>
+                                  ✏️ EDITANDO
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                                <div
+                                  onClick={(e) => { e.stopPropagation(); toggleSegment(seg.id); }}
+                                  style={{
+                                    width: '22px', height: '22px', borderRadius: '6px',
+                                    background: seg.selected ? colors.primary : 'transparent',
+                                    border: `2px solid ${seg.selected ? colors.primary : colors.border}`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', flexShrink: 0,
+                                  }}
+                                >
+                                  {seg.selected && <IoMdCheckmark size={14} color="#fff" />}
+                                </div>
+                                <div style={{
+                                  width: '4px', height: '20px',
+                                  background: segColors[i % segColors.length],
+                                  borderRadius: '2px', flexShrink: 0,
+                                }} />
+                                <span style={{ color: colors.text, fontSize: '14px', fontWeight: '600', flex: 1 }}>
+                                  {seg.name}
+                                </span>
+                                {/* Edit button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    isEditing ? cancelEditing() : startEditingClip(seg.id);
+                                  }}
+                                  style={{
+                                    background: isEditing ? colors.accent : 'transparent',
+                                    border: 'none',
+                                    color: isEditing ? '#000' : colors.textMuted,
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    borderRadius: '4px',
+                                  }}
+                                  title={isEditing ? "Cancelar edición" : "Editar clip"}
+                                >
+                                  <FiEdit2 size={14} />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteSegment(seg.id); }}
+                                  style={{
+                                    background: 'transparent', border: 'none',
+                                    color: colors.textMuted, cursor: 'pointer', padding: '4px',
+                                  }}
+                                >
+                                  <IoMdTrash size={16} />
+                                </button>
                               </div>
                               <div style={{
-                                width: '4px', height: '20px',
-                                background: segColors[i % segColors.length],
-                                borderRadius: '2px', flexShrink: 0,
-                              }} />
-                              <span style={{ color: colors.text, fontSize: '14px', fontWeight: '600', flex: 1 }}>
-                                {seg.name}
-                              </span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); deleteSegment(seg.id); }}
-                                style={{
-                                  background: 'transparent', border: 'none',
-                                  color: colors.textMuted, cursor: 'pointer', padding: '4px',
-                                }}
-                              >
-                                <IoMdTrash size={16} />
-                              </button>
-                            </div>
-                            <div style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              color: colors.textSecondary, fontSize: '12px', fontFamily: 'monospace',
-                            }}>
-                              <span>{fmt(seg.start)} → {fmt(seg.end || duration)}</span>
-                              <span style={{
-                                background: colors.card, padding: '2px 8px',
-                                borderRadius: '4px', color: colors.primary, fontWeight: '600',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                color: colors.textSecondary, fontSize: '12px', fontFamily: 'monospace',
                               }}>
-                                {fmt((seg.end || duration) - seg.start)}
-                              </span>
+                                <span>{fmt(seg.start)} → {fmt(seg.end || duration)}</span>
+                                <span style={{
+                                  background: colors.card, padding: '2px 8px',
+                                  borderRadius: '4px', color: colors.primary, fontWeight: '600',
+                                }}>
+                                  {fmt((seg.end || duration) - seg.start)}
+                                </span>
+                              </div>
+                              {/* Edit instructions */}
+                              {isEditing && (
+                                <div style={{
+                                  marginTop: '8px', padding: '8px',
+                                  background: 'rgba(0,0,0,0.3)', borderRadius: '6px',
+                                  fontSize: '11px', color: colors.textSecondary,
+                                  textAlign: 'center',
+                                }}>
+                                  Navega → <strong style={{ color: colors.accent }}>I</strong> nuevo inicio,
+                                  <strong style={{ color: colors.secondary }}> O</strong> nuevo fin
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

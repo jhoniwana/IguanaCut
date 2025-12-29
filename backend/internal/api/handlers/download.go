@@ -28,6 +28,10 @@ func (h *DownloadHandler) Start(c *gin.Context) {
 		return
 	}
 
+	// Get session ID from header
+	sessionID := c.GetHeader("X-Session-ID")
+	req.SessionID = sessionID
+
 	download, err := h.services.Download.StartDownload(c.Request.Context(), req)
 	if err != nil {
 		h.logger.Error("Failed to start download", zap.Error(err))

@@ -46,16 +46,18 @@ func NewDownloadService(storage *storage.Manager, videoService *VideoService, cf
 
 // DownloadRequest represents a download request
 type DownloadRequest struct {
-	URL    string `json:"url" binding:"required"`
-	Format string `json:"format,omitempty"` // e.g., "best", "bestvideo+bestaudio", specific format ID
+	URL       string `json:"url" binding:"required"`
+	Format    string `json:"format,omitempty"` // e.g., "best", "bestvideo+bestaudio", specific format ID
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // StartDownload initiates a video download
 func (s *DownloadService) StartDownload(ctx context.Context, req DownloadRequest) (*models.Download, error) {
-	// Create download record
+	// Create download record with session ID
 	download := &models.Download{
-		URL:    req.URL,
-		Status: models.DownloadStatusPending,
+		URL:       req.URL,
+		SessionID: req.SessionID,
+		Status:    models.DownloadStatusPending,
 	}
 
 	if err := s.storage.CreateDownload(download); err != nil {
@@ -298,9 +300,9 @@ func (s *DownloadService) runDirectDownload(download *models.Download, req Downl
 		zap.Int64("size", downloaded),
 	)
 
-	// Import the downloaded video
+	// Import the downloaded video with session ID
 	filename := filepath.Base(outputPath)
-	video, err := s.videoService.CreateFromUpload(filename, outputPath)
+	video, err := s.videoService.CreateFromUpload(filename, outputPath, download.SessionID)
 	if err != nil {
 		s.logger.Error("Failed to import downloaded video", zap.Error(err))
 		download.Status = models.DownloadStatusFailed
@@ -544,9 +546,9 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 		zap.String("extension", filepath.Ext(downloadedFile)),
 	)
 
-	// Import the downloaded video
+	// Import the downloaded video with session ID
 	filename := filepath.Base(downloadedFile)
-	video, err := s.videoService.CreateFromUpload(filename, downloadedFile)
+	video, err := s.videoService.CreateFromUpload(filename, downloadedFile, download.SessionID)
 	if err != nil {
 		s.logger.Error("Failed to import downloaded video", zap.Error(err))
 		download.Status = models.DownloadStatusFailed

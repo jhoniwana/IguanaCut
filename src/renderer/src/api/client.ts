@@ -1,6 +1,29 @@
 // API client for web version - replaces Electron IPC
 const API_BASE = process.env.IS_WEB ? '' : 'http://localhost:8080';
 
+// Session ID for isolating users without login
+function getSessionId(): string {
+  const STORAGE_KEY = 'losslesscut_session_id';
+  let sessionId = localStorage.getItem(STORAGE_KEY);
+  if (!sessionId) {
+    // Generate a unique session ID
+    sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem(STORAGE_KEY, sessionId);
+  }
+  return sessionId;
+}
+
+// Helper to get headers with session ID
+function getHeaders(contentType?: string): HeadersInit {
+  const headers: HeadersInit = {
+    'X-Session-ID': getSessionId(),
+  };
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+  return headers;
+}
+
 export interface Video {
   id: string;
   file_name: string;
@@ -65,6 +88,7 @@ class ApiClient {
     formData.append('file', file);
     const response = await fetch('/api/videos/upload', {
       method: 'POST',
+      headers: { 'X-Session-ID': getSessionId() },
       body: formData,
     });
     if (!response.ok) throw new Error('Upload failed');
@@ -74,7 +98,7 @@ class ApiClient {
   async startDownload(url: string, format = 'best'): Promise<Download> {
     const response = await fetch('/api/downloads', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders('application/json'),
       body: JSON.stringify({ url, format }),
     });
     if (!response.ok) throw new Error('Download start failed');
@@ -82,13 +106,17 @@ class ApiClient {
   }
 
   async getDownload(id: string): Promise<Download> {
-    const response = await fetch(`/api/downloads/${id}`);
+    const response = await fetch(`/api/downloads/${id}`, {
+      headers: getHeaders(),
+    });
     if (!response.ok) throw new Error('Failed to get download');
     return response.json();
   }
 
   async listDownloads() {
-    const response = await fetch('/api/downloads');
+    const response = await fetch('/api/downloads', {
+      headers: getHeaders(),
+    });
     if (!response.ok) throw new Error('Failed to list downloads');
     return response.json();
   }
@@ -96,6 +124,7 @@ class ApiClient {
   async clearAllDownloads() {
     const response = await fetch('/api/downloads', {
       method: 'DELETE',
+      headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to clear downloads');
     return response.json();
@@ -104,7 +133,7 @@ class ApiClient {
   async createProject(name: string, videoId: string) {
     const response = await fetch('/api/projects', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders('application/json'),
       body: JSON.stringify({ name, video_id: videoId }),
     });
     if (!response.ok) throw new Error('Create project failed');
@@ -114,7 +143,7 @@ class ApiClient {
   async updateProject(id: string, project: Project) {
     const response = await fetch(`/api/projects/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders('application/json'),
       body: JSON.stringify(project),
     });
     if (!response.ok) throw new Error('Update failed');
@@ -124,7 +153,7 @@ class ApiClient {
   async exportProject(projectId: string, options: any): Promise<Operation> {
     const response = await fetch(`/api/projects/${projectId}/export`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders('application/json'),
       body: JSON.stringify(options),
     });
     if (!response.ok) throw new Error('Export failed');
@@ -132,23 +161,30 @@ class ApiClient {
   }
 
   async getOperation(operationId: string): Promise<Operation> {
-    const response = await fetch(`/api/operations/${operationId}`);
+    const response = await fetch(`/api/operations/${operationId}`, {
+      headers: getHeaders(),
+    });
     if (!response.ok) throw new Error('Failed to get operation status');
     return response.json();
   }
 
   getVideoStreamUrl(videoId: string): string {
-    return `/api/videos/${videoId}/stream`;
+    return `/api/videos/${videoId}/stream?session=${getSessionId()}`;
   }
 
   async captureScreenshot(videoId: string, timestamp: number, quality = 2): Promise<{ filename: string; url: string }> {
     const response = await fetch(`/api/videos/${videoId}/screenshot`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders('application/json'),
       body: JSON.stringify({ timestamp, quality }),
     });
     if (!response.ok) throw new Error('Screenshot capture failed');
     return response.json();
+  }
+
+  // Get current session ID (for display or debugging)
+  getSessionId(): string {
+    return getSessionId();
   }
 }
 

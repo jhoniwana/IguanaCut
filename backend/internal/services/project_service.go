@@ -26,10 +26,15 @@ func NewProjectService(storage *storage.Manager, logger *zap.Logger) *ProjectSer
 }
 
 func (s *ProjectService) Create(name string, videoID string) (*models.Project, error) {
+	return s.CreateWithSession(name, videoID, "")
+}
+
+func (s *ProjectService) CreateWithSession(name string, videoID string, sessionID string) (*models.Project, error) {
 	project := &models.Project{
 		ID:        uuid.New().String(),
 		Name:      name,
 		VideoID:   videoID,
+		SessionID: sessionID,
 		Segments:  []models.Segment{},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -39,7 +44,7 @@ func (s *ProjectService) Create(name string, videoID string) (*models.Project, e
 		return nil, fmt.Errorf("failed to save project: %w", err)
 	}
 
-	s.logger.Info("Created project", zap.String("id", project.ID), zap.String("name", name))
+	s.logger.Info("Created project", zap.String("id", project.ID), zap.String("name", name), zap.String("sessionID", sessionID))
 	return project, nil
 }
 

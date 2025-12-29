@@ -38,6 +38,9 @@ func (h *VideoHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	// Get session ID from header
+	sessionID := c.GetHeader("X-Session-ID")
+
 	// Check file size
 	if file.Size > h.config.Server.MaxUploadSize {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file too large"})
@@ -56,8 +59,8 @@ func (h *VideoHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// Create video record
-	video, err := h.services.Video.CreateFromUpload(file.Filename, destPath)
+	// Create video record with session ID
+	video, err := h.services.Video.CreateFromUpload(file.Filename, destPath, sessionID)
 	if err != nil {
 		h.logger.Error("Failed to create video record", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create video"})
@@ -68,6 +71,7 @@ func (h *VideoHandler) Upload(c *gin.Context) {
 		zap.String("id", video.ID),
 		zap.String("filename", file.Filename),
 		zap.Int64("size", file.Size),
+		zap.String("sessionID", sessionID),
 	)
 
 	c.JSON(http.StatusCreated, models.UploadResponse{
@@ -305,6 +309,26 @@ func (h *VideoHandler) Waveform(c *gin.Context) {
 
 func (h *VideoHandler) Delete(c *gin.Context) {
 	videoID := c.Param("id")
+	sessionID := c.GetHeader("X-Session-ID")
+
+	// Verify ownership before deletion
+	video, err := h.services.Video.GetVideo(videoID)
+	if err != nil {
+		h.logger.Error("Video not found", zap.String("id", videoID), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+
+	// Check if video belongs to this session (if session is set)
+	if video.SessionID != "" && video.SessionID != sessionID {
+		h.logger.Warn("Unauthorized delete attempt",
+			zap.String("videoID", videoID),
+			zap.String("videoSession", video.SessionID),
+			zap.String("requestSession", sessionID),
+		)
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to delete this video"})
+		return
+	}
 
 	if err := h.services.Video.DeleteVideo(videoID); err != nil {
 		h.logger.Error("Failed to delete video", zap.String("id", videoID), zap.Error(err))

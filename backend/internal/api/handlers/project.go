@@ -32,7 +32,10 @@ func (h *ProjectHandler) Create(c *gin.Context) {
 		return
 	}
 
-	project, err := h.services.Project.Create(req.Name, req.VideoID)
+	// Get session ID from header
+	sessionID := c.GetHeader("X-Session-ID")
+
+	project, err := h.services.Project.CreateWithSession(req.Name, req.VideoID, sessionID)
 	if err != nil {
 		h.logger.Error("Failed to create project", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create project"})

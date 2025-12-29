@@ -9,6 +9,7 @@ type Project struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	VideoID       string    `json:"video_id"`
+	SessionID     string    `json:"session_id,omitempty"` // For user isolation
 	Segments      []Segment `json:"segments"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -39,6 +40,7 @@ type Video struct {
 	Codec       string        `json:"codec"`
 	Format      string        `json:"format"`
 	Metadata    VideoMetadata `json:"metadata"`
+	SessionID   string        `json:"session_id,omitempty"` // For user isolation
 	CreatedAt   time.Time     `json:"created_at"`
 }
 
@@ -153,6 +155,7 @@ type Download struct {
 	Progress  float64        `json:"progress"`
 	FilePath  string         `json:"file_path,omitempty"`
 	VideoID   string         `json:"video_id,omitempty"`
+	SessionID string         `json:"session_id,omitempty"` // For user isolation
 	Error     string         `json:"error,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

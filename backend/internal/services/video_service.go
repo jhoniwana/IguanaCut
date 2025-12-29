@@ -29,19 +29,20 @@ func NewVideoService(storage *storage.Manager, cfg *config.Config, logger *zap.L
 	}
 }
 
-func (s *VideoService) CreateFromUpload(filename string, filepath string) (*models.Video, error) {
+func (s *VideoService) CreateFromUpload(filename string, filepath string, sessionID string) (*models.Video, error) {
 	// Get file size
 	fileSize, err := s.storage.GetFileSize(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file size: %w", err)
 	}
 
-	// Create video record
+	// Create video record with session ID
 	video := &models.Video{
 		ID:        generateVideoID(),
 		FileName:  filename,
 		FilePath:  filepath,
 		FileSize:  fileSize,
+		SessionID: sessionID,
 		CreatedAt: time.Now(),
 	}
 
