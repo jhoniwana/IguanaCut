@@ -245,20 +245,29 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
   }, [isPlaying]);
 
-  // Poll export
+  // Poll export with faster interval for smoother progress
   useEffect(() => {
     if (!currentOperation || ['completed', 'failed'].includes(currentOperation.status)) return;
+
+    let lastProgress = 0;
     const poll = setInterval(async () => {
       try {
         const op = await apiClient.getOperation(currentOperation.id);
         setCurrentOperation(op);
-        setExportProgress(op.progress);
+
+        // Smoothly animate progress (never go backwards)
+        const newProgress = Math.max(lastProgress, op.progress);
+        lastProgress = newProgress;
+        setExportProgress(newProgress);
+
         if (['completed', 'failed'].includes(op.status)) {
+          setExportProgress(100);
           clearInterval(poll);
           setIsExporting(false);
         }
       } catch { clearInterval(poll); setIsExporting(false); }
-    }, 500);
+    }, 200); // Faster polling for smoother updates
+
     return () => clearInterval(poll);
   }, [currentOperation?.id, currentOperation?.status]);
 
@@ -853,17 +862,44 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   </div>
                 )}
 
-                {/* Cut indicator */}
-                {pendingCutStart !== null && !editingClipId && (
-                  <div style={{
-                    position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
-                    background: colors.accent, borderRadius: '8px', padding: '8px 12px',
-                    color: '#000', fontSize: '13px', fontWeight: '600',
-                    transition: 'right 0.3s ease',
-                  }}>
-                    ✂️ IN: {fmt(pendingCutStart)} — Press O for OUT
-                  </div>
-                )}
+                {/* Cut indicator with duration counter */}
+                {pendingCutStart !== null && !editingClipId && (() => {
+                  const clipDuration = Math.abs(currentTime - pendingCutStart);
+                  const mins = Math.floor(clipDuration / 60);
+                  const secs = Math.floor(clipDuration % 60);
+                  const ms = Math.floor((clipDuration % 1) * 10);
+                  return (
+                    <div style={{
+                      position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
+                      background: colors.accent, borderRadius: '8px', padding: '10px 14px',
+                      color: '#000', fontSize: '13px', fontWeight: '600',
+                      transition: 'right 0.3s ease',
+                      display: 'flex', flexDirection: 'column', gap: '4px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>✂️ IN: {fmt(pendingCutStart)}</span>
+                        <span style={{ opacity: 0.6 }}>→</span>
+                        <span>OUT: {fmt(currentTime)}</span>
+                      </div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 8px',
+                        marginTop: '2px',
+                      }}>
+                        <span style={{ fontSize: '11px', opacity: 0.8 }}>Duración:</span>
+                        <span style={{
+                          fontSize: '16px', fontWeight: '700', fontFamily: 'monospace',
+                          color: clipDuration >= 0.1 ? '#000' : '#666',
+                        }}>
+                          {mins}:{secs.toString().padStart(2, '0')}.{ms}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '10px', opacity: 0.7, textAlign: 'center' }}>
+                        Presiona O para crear clip
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Play overlay */}
                 {!isPlaying && (

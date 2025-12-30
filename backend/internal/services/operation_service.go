@@ -55,6 +55,7 @@ func (s *OperationService) Export(project *models.Project, request models.Export
 
 func (s *OperationService) runExport(operation *models.Operation, project *models.Project, request models.ExportRequest) {
 	operation.Status = models.OperationStatusProcessing
+	operation.Progress = 5 // Initial progress to show activity
 	ctx := context.Background()
 
 	// Get actual video file path from metadata
@@ -130,12 +131,18 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		format = "mp4"
 	}
 
-	// Progress callback
+	// Progress callback with minimum step of 10%
+	operation.Progress = 10 // Started processing
 	onProgress := func(progress float64) {
-		operation.Progress = progress * 100
+		// Scale progress from 10% to 95% (leave 5% for finalization)
+		scaledProgress := 10 + (progress * 85)
+		if scaledProgress > operation.Progress {
+			operation.Progress = scaledProgress
+		}
 		s.logger.Debug("Export progress",
 			zap.String("operationId", operation.ID),
-			zap.Float64("progress", operation.Progress),
+			zap.Float64("rawProgress", progress),
+			zap.Float64("scaledProgress", operation.Progress),
 		)
 	}
 
