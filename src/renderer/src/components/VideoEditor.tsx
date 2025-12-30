@@ -72,6 +72,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   // Drag and drop reordering
   const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
   const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
+  const [justDropped, setJustDropped] = useState(false);
 
   // Refs
   const isPlayingRef = useRef(false);
@@ -418,33 +419,45 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
   // Drag and drop handlers for reordering clips
   const handleDragStart = (e: React.DragEvent, clipId: string) => {
+    e.stopPropagation();
     setDraggedClipId(clipId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', clipId);
+    // Set drag image
+    if (e.currentTarget instanceof HTMLElement) {
+      e.dataTransfer.setDragImage(e.currentTarget, 50, 25);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent, clipId: string) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     if (clipId !== draggedClipId) {
       setDragOverClipId(clipId);
     }
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setDragOverClipId(null);
   };
 
   const handleDrop = (e: React.DragEvent, targetClipId: string) => {
     e.preventDefault();
-    if (!draggedClipId || draggedClipId === targetClipId) {
+    e.stopPropagation();
+
+    const sourceClipId = draggedClipId || e.dataTransfer.getData('text/plain');
+
+    if (!sourceClipId || sourceClipId === targetClipId) {
       setDraggedClipId(null);
       setDragOverClipId(null);
       return;
     }
 
     // Find indices
-    const fromIndex = segments.findIndex(s => s.id === draggedClipId);
+    const fromIndex = segments.findIndex(s => s.id === sourceClipId);
     const toIndex = segments.findIndex(s => s.id === targetClipId);
 
     if (fromIndex === -1 || toIndex === -1) {
@@ -454,12 +467,12 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     }
 
     // Reorder segments
-    const updated = [...segments];
-    const [removed] = updated.splice(fromIndex, 1);
-    updated.splice(toIndex, 0, removed);
+    const newSegments = [...segments];
+    const [removed] = newSegments.splice(fromIndex, 1);
+    newSegments.splice(toIndex, 0, removed);
 
     // Rename clips to reflect new order
-    const renamed = updated.map((seg, i) => ({
+    const renamed = newSegments.map((seg, i) => ({
       ...seg,
       name: `Clip ${i + 1}`,
     }));
@@ -471,11 +484,20 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
     setDraggedClipId(null);
     setDragOverClipId(null);
+    setJustDropped(true);
+    setTimeout(() => setJustDropped(false), 100);
   };
 
-  const handleDragEnd = () => {
+  const handleDragEnd = (e: React.DragEvent) => {
+    e.preventDefault();
     setDraggedClipId(null);
     setDragOverClipId(null);
+  };
+
+  const handleClipClick = (seg: Segment) => {
+    // Ignore click if we just dropped
+    if (justDropped) return;
+    if (videoRef.current) seekVideo(seg.start);
   };
 
   const handleQuickClip = () => {
@@ -926,12 +948,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                               draggable={!isEditing}
                               onDragStart={(e) => handleDragStart(e, seg.id)}
                               onDragOver={(e) => handleDragOver(e, seg.id)}
-                              onDragLeave={handleDragLeave}
+                              onDragLeave={(e) => handleDragLeave(e)}
                               onDrop={(e) => handleDrop(e, seg.id)}
-                              onDragEnd={handleDragEnd}
-                              onClick={() => {
-                                if (videoRef.current) seekVideo(seg.start);
-                              }}
+                              onDragEnd={(e) => handleDragEnd(e)}
+                              onClick={() => handleClipClick(seg)}
                               style={{
                                 background: isDragOver
                                   ? 'rgba(59, 130, 246, 0.3)'
@@ -1060,6 +1080,42 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     padding: '12px',
                     background: 'rgba(0,0,0,0.3)',
                   }}>
+                    {/* Total duration of selected clips */}
+                    {(() => {
+                      const selectedSegs = segments.filter(s => s.selected);
+                      const totalSeconds = selectedSegs.reduce((acc, seg) => {
+                        const segDuration = (seg.end || duration) - seg.start;
+                        return acc + segDuration;
+                      }, 0);
+                      const mins = Math.floor(totalSeconds / 60);
+                      const secs = Math.floor(totalSeconds % 60);
+                      const ms = Math.floor((totalSeconds % 1) * 10);
+                      return (
+                        <div style={{
+                          background: colors.card,
+                          borderRadius: '8px',
+                          padding: '10px',
+                          marginBottom: '10px',
+                          textAlign: 'center',
+                        }}>
+                          <div style={{ fontSize: '10px', color: colors.textMuted, marginBottom: '4px' }}>
+                            DURACIÓN TOTAL
+                          </div>
+                          <div style={{
+                            fontSize: '20px',
+                            fontWeight: '700',
+                            color: colors.primary,
+                            fontFamily: 'monospace',
+                          }}>
+                            {mins}:{secs.toString().padStart(2, '0')}.{ms}
+                          </div>
+                          <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px' }}>
+                            {selectedSegs.length} clip{selectedSegs.length !== 1 ? 's' : ''} · {totalSeconds.toFixed(1)}s
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <div style={{
                       fontSize: '11px', color: colors.textMuted,
                       marginBottom: '8px', textAlign: 'center',
@@ -1145,35 +1201,84 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       </button>
                     </div>
 
-                    <button
-                      onClick={handleExport}
-                      disabled={isExporting || selectedCount === 0}
-                      style={{
-                        width: '100%',
-                        background: isExporting ? colors.card : colors.primary,
-                        color: '#fff',
-                        border: 'none',
+                    {/* Export Button with Progress */}
+                    {isExporting ? (
+                      <div style={{
+                        background: colors.card,
                         borderRadius: '10px',
-                        padding: '14px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: isExporting || selectedCount === 0 ? 'not-allowed' : 'pointer',
-                        opacity: selectedCount === 0 ? 0.5 : 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      {isExporting ? (
-                        <>Exportando... {Math.round(exportProgress)}%</>
-                      ) : (
-                        <>
-                          <IoMdDownload size={18} />
-                          Exportar {exportSeparate ? `${selectedCount} Archivos` : 'Combinado'}
-                        </>
-                      )}
-                    </button>
+                        padding: '12px',
+                        marginBottom: '8px',
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '8px',
+                        }}>
+                          <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
+                            Exportando...
+                          </span>
+                          <span style={{
+                            color: colors.primary,
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            fontFamily: 'monospace',
+                          }}>
+                            {exportProgress.toFixed(1)}%
+                          </span>
+                        </div>
+                        {/* Progress bar */}
+                        <div style={{
+                          width: '100%',
+                          height: '8px',
+                          background: colors.border,
+                          borderRadius: '4px',
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{
+                            width: `${exportProgress}%`,
+                            height: '100%',
+                            background: `linear-gradient(90deg, ${colors.primary}, ${colors.secondary})`,
+                            borderRadius: '4px',
+                            transition: 'width 0.3s ease',
+                          }} />
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginTop: '6px',
+                          fontSize: '10px',
+                          color: colors.textMuted,
+                        }}>
+                          <span>Procesando video...</span>
+                          <span>{Math.round(exportProgress)}% completado</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleExport}
+                        disabled={selectedCount === 0}
+                        style={{
+                          width: '100%',
+                          background: colors.primary,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '10px',
+                          padding: '14px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
+                          opacity: selectedCount === 0 ? 0.5 : 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <IoMdDownload size={18} />
+                        Exportar {exportSeparate ? `${selectedCount} Archivos` : 'Combinado'}
+                      </button>
+                    )}
                     {currentOperation?.status === 'completed' && (
                       <button
                         onClick={handleDownload}
