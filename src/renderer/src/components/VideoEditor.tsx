@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
-import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2 } from 'react-icons/fi';
-import { MdContentCut, MdPlaylistPlay, MdEdit } from 'react-icons/md';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop } from 'react-icons/fi';
+import { MdContentCut, MdPlaylistPlay, MdEdit, MdBlurOn } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
 import IntroOutroSelector from './IntroOutroSelector';
+import CropSelector, { CropConfig } from './CropSelector';
+import BlurRegionSelector, { BlurConfig } from './BlurRegionSelector';
 
 // Clean, modern colors
 const colors = {
@@ -58,6 +60,27 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   });
   const [dragStartTime, setDragStartTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Crop configuration
+  const [showCrop, setShowCrop] = useState(false);
+  const [cropConfig, setCropConfig] = useState<CropConfig>({
+    enabled: false,
+    preset: null,
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+  });
+  const [videoWidth, setVideoWidth] = useState(1920);
+  const [videoHeight, setVideoHeight] = useState(1080);
+
+  // Blur configuration
+  const [showBlur, setShowBlur] = useState(false);
+  const [blurConfig, setBlurConfig] = useState<BlurConfig>({
+    mode: 'off',
+    autoIntensity: 25,
+    regions: [],
+  });
 
   // Export options
   const [exportSeparate, setExportSeparate] = useState(false); // false = merged, true = separate files
@@ -556,6 +579,26 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         export_separate: exportSeparate,
         format: 'mp4',
         output_name: `${videoFile?.name.split('.')[0] || 'video'}_cut`,
+        // Crop settings
+        crop_enabled: cropConfig.enabled,
+        crop_preset: cropConfig.preset || undefined,
+        crop_x: cropConfig.x,
+        crop_y: cropConfig.y,
+        crop_width: cropConfig.width,
+        crop_height: cropConfig.height,
+        // Blur settings
+        blur_mode: blurConfig.mode,
+        blur_auto_intensity: blurConfig.autoIntensity,
+        blur_regions: blurConfig.mode === 'manual' ? blurConfig.regions.map(r => ({
+          id: r.id,
+          x: Math.round((r.x / 100) * videoWidth),
+          y: Math.round((r.y / 100) * videoHeight),
+          width: Math.round((r.width / 100) * videoWidth),
+          height: Math.round((r.height / 100) * videoHeight),
+          start_time: r.startTime,
+          end_time: r.endTime,
+          blur_intensity: r.blurIntensity,
+        })) : undefined,
       });
       setCurrentOperation(op);
     } catch { setIsExporting(false); }
@@ -835,7 +878,19 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   src={videoUrl}
                   playsInline
                   style={{ maxWidth: '100%', maxHeight: '100%' }}
-                  onLoadedMetadata={() => videoRef.current && setDuration(videoRef.current.duration)}
+                  onLoadedMetadata={() => {
+                    if (videoRef.current) {
+                      setDuration(videoRef.current.duration);
+                      setVideoWidth(videoRef.current.videoWidth || 1920);
+                      setVideoHeight(videoRef.current.videoHeight || 1080);
+                      // Initialize crop config with video dimensions
+                      setCropConfig(prev => ({
+                        ...prev,
+                        width: videoRef.current?.videoWidth || 1920,
+                        height: videoRef.current?.videoHeight || 1080,
+                      }));
+                    }
+                  }}
                   onTimeUpdate={() => !isSeekingRef.current && !isPlayingRef.current && videoRef.current && setCurrentTime(videoRef.current.currentTime)}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
@@ -933,6 +988,115 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     }}>
                       <IoMdPlay size={36} color="#fff" style={{ marginLeft: '4px' }} />
                     </div>
+                  </div>
+                )}
+
+                {/* Crop Overlay */}
+                {cropConfig.enabled && videoRef.current && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    overflow: 'hidden',
+                  }}>
+                    {/* Dark overlay outside crop area */}
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(0, 0, 0, 0.6)',
+                      clipPath: `polygon(
+                        0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%,
+                        ${(cropConfig.x / videoWidth) * 100}% ${(cropConfig.y / videoHeight) * 100}%,
+                        ${(cropConfig.x / videoWidth) * 100}% ${((cropConfig.y + cropConfig.height) / videoHeight) * 100}%,
+                        ${((cropConfig.x + cropConfig.width) / videoWidth) * 100}% ${((cropConfig.y + cropConfig.height) / videoHeight) * 100}%,
+                        ${((cropConfig.x + cropConfig.width) / videoWidth) * 100}% ${(cropConfig.y / videoHeight) * 100}%,
+                        ${(cropConfig.x / videoWidth) * 100}% ${(cropConfig.y / videoHeight) * 100}%
+                      )`,
+                    }} />
+                    {/* Crop border */}
+                    <div style={{
+                      position: 'absolute',
+                      left: `${(cropConfig.x / videoWidth) * 100}%`,
+                      top: `${(cropConfig.y / videoHeight) * 100}%`,
+                      width: `${(cropConfig.width / videoWidth) * 100}%`,
+                      height: `${(cropConfig.height / videoHeight) * 100}%`,
+                      border: '2px dashed #10b981',
+                      boxSizing: 'border-box',
+                    }}>
+                      {/* Corner indicators */}
+                      {[['0', '0'], ['100%', '0'], ['0', '100%'], ['100%', '100%']].map(([x, y], i) => (
+                        <div key={i} style={{
+                          position: 'absolute',
+                          left: x,
+                          top: y,
+                          transform: 'translate(-50%, -50%)',
+                          width: '12px',
+                          height: '12px',
+                          background: '#10b981',
+                          borderRadius: '50%',
+                        }} />
+                      ))}
+                      {/* Aspect ratio label */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '8px',
+                        left: '8px',
+                        background: 'rgba(16, 185, 129, 0.9)',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                      }}>
+                        {cropConfig.preset?.toUpperCase() || 'CROP'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Blur Regions Overlay */}
+                {blurConfig.mode === 'manual' && blurConfig.regions.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    overflow: 'hidden',
+                  }}>
+                    {blurConfig.regions.map((region) => {
+                      const isActive = currentTime >= region.startTime && currentTime <= region.endTime;
+                      return (
+                        <div
+                          key={region.id}
+                          style={{
+                            position: 'absolute',
+                            left: `${region.x}%`,
+                            top: `${region.y}%`,
+                            width: `${region.width}%`,
+                            height: `${region.height}%`,
+                            border: `2px ${isActive ? 'solid' : 'dashed'} ${isActive ? '#8b5cf6' : 'rgba(139, 92, 246, 0.5)'}`,
+                            background: isActive ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.1)',
+                            boxSizing: 'border-box',
+                            borderRadius: '4px',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute',
+                            top: '-20px',
+                            left: '4px',
+                            background: isActive ? '#8b5cf6' : 'rgba(139, 92, 246, 0.7)',
+                            color: '#fff',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontSize: '9px',
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            BLUR {isActive ? '(ACTIVO)' : ''}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1532,7 +1696,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
               {/* Quick Actions */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button onClick={() => setShowIntroOutro(!showIntroOutro)} style={{
+                <button onClick={() => { setShowCrop(!showCrop); setShowBlur(false); setShowIntroOutro(false); }} style={{
+                  ...btn(showCrop ? colors.primary : cropConfig.enabled ? 'rgba(16, 185, 129, 0.3)' : colors.card),
+                  color: showCrop ? '#fff' : cropConfig.enabled ? colors.primary : colors.text,
+                  border: cropConfig.enabled && !showCrop ? `1px solid ${colors.primary}` : undefined,
+                }}>
+                  <FiCrop size={18} /> {cropConfig.enabled ? cropConfig.preset?.toUpperCase() || 'Crop' : 'Recortar'}
+                </button>
+                <button onClick={() => { setShowBlur(!showBlur); setShowCrop(false); setShowIntroOutro(false); }} style={{
+                  ...btn(showBlur ? '#8b5cf6' : blurConfig.mode !== 'off' ? 'rgba(139, 92, 246, 0.3)' : colors.card),
+                  color: showBlur ? '#fff' : blurConfig.mode !== 'off' ? '#8b5cf6' : colors.text,
+                  border: blurConfig.mode !== 'off' && !showBlur ? '1px solid #8b5cf6' : undefined,
+                }}>
+                  <MdBlurOn size={18} /> {blurConfig.mode === 'auto' ? 'Auto-Blur' : blurConfig.mode === 'manual' ? `Blur (${blurConfig.regions.length})` : 'Censurar'}
+                </button>
+                <button onClick={() => { setShowIntroOutro(!showIntroOutro); setShowCrop(false); setShowBlur(false); }} style={{
                   ...btn(showIntroOutro ? colors.accent : colors.card),
                   color: showIntroOutro ? '#000' : colors.text,
                 }}>
@@ -1558,9 +1736,35 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       cursor: 'pointer', fontSize: '18px'
                     }}>×</button>
                   </div>
-                  <IntroOutroSelector 
-                    config={introOutroConfig} 
-                    onChange={setIntroOutroConfig} 
+                  <IntroOutroSelector
+                    config={introOutroConfig}
+                    onChange={setIntroOutroConfig}
+                  />
+                </div>
+              )}
+
+              {/* Crop Settings */}
+              {showCrop && (
+                <div style={{ marginTop: '16px' }}>
+                  <CropSelector
+                    config={cropConfig}
+                    onChange={setCropConfig}
+                    videoWidth={videoWidth}
+                    videoHeight={videoHeight}
+                    onClose={() => setShowCrop(false)}
+                  />
+                </div>
+              )}
+
+              {/* Blur Settings */}
+              {showBlur && (
+                <div style={{ marginTop: '16px' }}>
+                  <BlurRegionSelector
+                    config={blurConfig}
+                    onChange={setBlurConfig}
+                    currentTime={currentTime}
+                    duration={duration}
+                    onClose={() => setShowBlur(false)}
                   />
                 </div>
               )}
