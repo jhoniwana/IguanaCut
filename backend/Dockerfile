@@ -51,13 +51,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/serv
 # =====================================
 FROM alpine:latest
 
-# Install runtime dependencies
+# Install runtime dependencies including VAAPI drivers
 RUN apk add --no-cache \
     ffmpeg \
     ffmpeg-libs \
     python3 \
     py3-pip \
-    ca-certificates
+    ca-certificates \
+    intel-media-driver \
+    libva \
+    libva-intel-driver \
+    mesa-va-gallium
 
 # Install yt-dlp
 RUN pip3 install --break-system-packages --no-cache-dir yt-dlp
