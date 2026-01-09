@@ -129,6 +129,18 @@ type UploadResponse struct {
 	Video   *Video `json:"video"`
 }
 
+// BlurRegion represents a region to blur in the video
+type BlurRegion struct {
+	ID            string  `json:"id"`
+	X             int     `json:"x"`              // Pixel position
+	Y             int     `json:"y"`              // Pixel position
+	Width         int     `json:"width"`          // Pixel size
+	Height        int     `json:"height"`         // Pixel size
+	StartTime     float64 `json:"start_time"`     // When blur starts
+	EndTime       float64 `json:"end_time"`       // When blur ends
+	BlurIntensity int     `json:"blur_intensity"` // 10-50
+}
+
 // ExportRequest represents an export request
 type ExportRequest struct {
 	Format         string   `json:"format,omitempty"`
@@ -143,6 +155,17 @@ type ExportRequest struct {
 	IntroDuration  int    `json:"intro_duration,omitempty"` // Duration in seconds
 	OutroImagePath string `json:"outro_image_path,omitempty"`
 	OutroDuration  int    `json:"outro_duration,omitempty"` // Duration in seconds
+	// Crop settings
+	CropEnabled bool   `json:"crop_enabled,omitempty"`
+	CropPreset  string `json:"crop_preset,omitempty"` // "tiktok", "instagram", "youtube", "cinema", "free"
+	CropX       int    `json:"crop_x,omitempty"`
+	CropY       int    `json:"crop_y,omitempty"`
+	CropWidth   int    `json:"crop_width,omitempty"`
+	CropHeight  int    `json:"crop_height,omitempty"`
+	// Blur settings
+	BlurMode          string       `json:"blur_mode,omitempty"`           // "off", "auto", "manual"
+	BlurAutoIntensity int          `json:"blur_auto_intensity,omitempty"` // For auto mode
+	BlurRegions       []BlurRegion `json:"blur_regions,omitempty"`        // For manual mode
 }
 
 // Download represents a video download from URL

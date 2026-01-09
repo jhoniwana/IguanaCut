@@ -714,3 +714,226 @@ func (e *Executor) GetFFmpegPath() string {
 func (e *Executor) GetFFprobePath() string {
 	return e.ffprobePath
 }
+
+// FilterOptions contains video filter settings
+type FilterOptions struct {
+	// Crop settings
+	CropEnabled bool
+	CropX       int
+	CropY       int
+	CropWidth   int
+	CropHeight  int
+	// Blur regions (manual mode)
+	BlurRegions []BlurRegionFilter
+}
+
+// BlurRegionFilter represents a region to blur
+type BlurRegionFilter struct {
+	X             int
+	Y             int
+	Width         int
+	Height        int
+	StartTime     float64
+	EndTime       float64
+	BlurIntensity int
+}
+
+// BuildFilterChain constructs the FFmpeg filter chain string
+func (e *Executor) BuildFilterChain(opts FilterOptions) string {
+	var filters []string
+
+	// Add crop filter if enabled
+	if opts.CropEnabled && opts.CropWidth > 0 && opts.CropHeight > 0 {
+		cropFilter := fmt.Sprintf("crop=%d:%d:%d:%d", opts.CropWidth, opts.CropHeight, opts.CropX, opts.CropY)
+		filters = append(filters, cropFilter)
+	}
+
+	// Add blur filters for each region
+	// FFmpeg uses boxblur with enable expression for time-based blur
+	for i, region := range opts.BlurRegions {
+		if region.Width > 0 && region.Height > 0 {
+			// Create a complex filter for each blur region
+			// We use drawbox with invert to create a blur effect, or use the boxblur filter
+			// For simplicity, we'll use a workaround with multiple filters
+			// The proper way is: split the video, apply blur to region, overlay back
+			blurRadius := region.BlurIntensity / 2
+			if blurRadius < 5 {
+				blurRadius = 5
+			}
+
+			// Using the 'boxblur' filter with enable expression
+			// Format: boxblur=luma_radius:chroma_radius:enable='between(t,start,end)'
+			// But boxblur applies to the whole frame, so we need a different approach
+
+			// Alternative: Use 'delogo' style approach with coordinates
+			// Or use a complex filter graph with split, crop, blur, overlay
+
+			// For now, use a simpler approach with drawbox to pixelate
+			// This creates a mosaic/pixelate effect by scaling down and up
+			// We'll implement proper blur regions using filter_complex
+
+			// Store region info for complex filter (will be built in CutVideoWithFilters)
+			_ = i
+			_ = blurRadius
+		}
+	}
+
+	if len(filters) == 0 {
+		return ""
+	}
+
+	return strings.Join(filters, ",")
+}
+
+// CutVideoWithFilters cuts a video segment with optional filters (crop, blur)
+func (e *Executor) CutVideoWithFilters(ctx context.Context, input, output string, start, end float64, filterOpts FilterOptions, onProgress ProgressCallback) error {
+	duration := end - start
+
+	e.logger.Info("Cutting segment with filters",
+		zap.Float64("start", start),
+		zap.Float64("end", end),
+		zap.Float64("duration", duration),
+		zap.Bool("cropEnabled", filterOpts.CropEnabled),
+		zap.Int("blurRegions", len(filterOpts.BlurRegions)),
+	)
+
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-t", fmt.Sprintf("%.6f", duration),
+	}
+
+	// Build filter chain
+	filterChain := e.BuildFilterChain(filterOpts)
+
+	// Handle blur regions with complex filter
+	if len(filterOpts.BlurRegions) > 0 {
+		// Build complex filter for blur regions
+		complexFilter := e.buildBlurComplexFilter(filterOpts, filterChain)
+		if complexFilter != "" {
+			args = append(args, "-filter_complex", complexFilter)
+			args = append(args, "-map", "[out]", "-map", "0:a?")
+		} else if filterChain != "" {
+			args = append(args, "-vf", filterChain)
+		}
+	} else if filterChain != "" {
+		args = append(args, "-vf", filterChain)
+	}
+
+	// Video encoding settings
+	args = append(args,
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	)
+
+	return e.Execute(ctx, ExecuteOptions{
+		Args:       args,
+		Duration:   duration,
+		OnProgress: onProgress,
+	})
+}
+
+// buildBlurComplexFilter builds a complex filter for blur regions
+func (e *Executor) buildBlurComplexFilter(opts FilterOptions, baseFilter string) string {
+	if len(opts.BlurRegions) == 0 {
+		return ""
+	}
+
+	// Complex filter approach:
+	// 1. Apply base filter (crop) first
+	// 2. For each blur region, create a blurred overlay
+	// Using: split -> boxblur on region -> overlay
+
+	var parts []string
+
+	// Start with input and apply crop if needed
+	inputLabel := "[0:v]"
+	if baseFilter != "" {
+		parts = append(parts, fmt.Sprintf("%s%s[base]", inputLabel, baseFilter))
+		inputLabel = "[base]"
+	}
+
+	// For each blur region, we need to:
+	// 1. Extract the region
+	// 2. Apply blur
+	// 3. Overlay it back with time-based enable
+
+	currentInput := inputLabel
+	for i, region := range opts.BlurRegions {
+		blurRadius := region.BlurIntensity / 2
+		if blurRadius < 5 {
+			blurRadius = 5
+		}
+
+		// Enable expression for time range
+		enableExpr := fmt.Sprintf("between(t,%.3f,%.3f)", region.StartTime, region.EndTime)
+
+		// Create a boxblur that affects only the specific region using overlay
+		// This is a simplified approach - we blur the entire frame and overlay the original except for the blur region
+		// A better approach would be to use crop, blur, pad, and overlay
+
+		// Simplified: use drawbox with pixelization effect
+		// Or use: split, crop region, blur, overlay back
+
+		// For simplicity, we'll use the 'enable' expression with boxblur on specific coords
+		// FFmpeg doesn't directly support region-based blur, so we use a workaround
+
+		// Workaround: Use overlay with a blurred version
+		// [input]split=2[main][blur]; [blur]boxblur=15[blurred]; [main][blurred]overlay=x:y:enable='between(t,s,e)'
+
+		// More efficient: use the 'delogo' style approach
+		// Or create a mosaic effect with scale down/up
+
+		outputLabel := fmt.Sprintf("[v%d]", i)
+		if i == len(opts.BlurRegions)-1 {
+			outputLabel = "[out]"
+		}
+
+		// Use split -> blur region -> overlay approach
+		blurFilter := fmt.Sprintf(
+			"%ssplit=2[main%d][forblur%d];"+
+				"[forblur%d]crop=%d:%d:%d:%d,boxblur=%d:%d[blurred%d];"+
+				"[main%d][blurred%d]overlay=%d:%d:enable='%s'%s",
+			currentInput, i, i,
+			i, region.Width, region.Height, region.X, region.Y, blurRadius, blurRadius, i,
+			i, i, region.X, region.Y, enableExpr, outputLabel,
+		)
+
+		parts = append(parts, blurFilter)
+		currentInput = outputLabel
+	}
+
+	// If we only have crop and no blur regions
+	if len(parts) == 0 && baseFilter != "" {
+		return fmt.Sprintf("[0:v]%s[out]", baseFilter)
+	}
+
+	// Combine all parts
+	if len(parts) == 1 && baseFilter == "" && len(opts.BlurRegions) == 1 {
+		// Single blur region without crop
+		region := opts.BlurRegions[0]
+		blurRadius := region.BlurIntensity / 2
+		if blurRadius < 5 {
+			blurRadius = 5
+		}
+		enableExpr := fmt.Sprintf("between(t,%.3f,%.3f)", region.StartTime, region.EndTime)
+
+		return fmt.Sprintf(
+			"[0:v]split=2[main][forblur];"+
+				"[forblur]crop=%d:%d:%d:%d,boxblur=%d:%d[blurred];"+
+				"[main][blurred]overlay=%d:%d:enable='%s'[out]",
+			region.Width, region.Height, region.X, region.Y, blurRadius, blurRadius,
+			region.X, region.Y, enableExpr,
+		)
+	}
+
+	return strings.Join(parts, ";")
+}

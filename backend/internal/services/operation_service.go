@@ -195,8 +195,9 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.Float64("duration", end-seg.Start),
+			zap.Bool("hasFilters", s.hasFilters(request)),
 		)
-		exportErr = s.ffmpeg.CutVideo(ctx, inputPath, outputPath, seg.Start, end, onProgress)
+		exportErr = s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, request, onProgress)
 		if exportErr == nil {
 			outputFiles = append(outputFiles, outputPath)
 		}
@@ -205,7 +206,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		if request.MergeSegments {
 			// Export merged file - cut segments first then merge
 			mergedPath := s.storage.GetOutputPath(fmt.Sprintf("%s_merged.%s", outputName, format))
-			exportErr = s.exportMergedSegments(ctx, inputPath, mergedPath, segments, onProgress)
+			exportErr = s.exportMergedSegments(ctx, inputPath, mergedPath, segments, request, onProgress)
 			if exportErr == nil {
 				outputFiles = append(outputFiles, mergedPath)
 			}
@@ -213,7 +214,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 
 		if request.ExportSeparate && exportErr == nil {
 			// Export each segment separately
-			separateFiles, err := s.exportMultipleSegments(ctx, inputPath, outputName, format, segments, onProgress)
+			separateFiles, err := s.exportMultipleSegments(ctx, inputPath, outputName, format, segments, request, onProgress)
 			if err != nil {
 				exportErr = err
 			} else {
@@ -235,7 +236,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		// If neither merge nor separate was specified, default to merge
 		if !request.MergeSegments && !request.ExportSeparate && !request.ExportChapters {
 			mergedPath := s.storage.GetOutputPath(fmt.Sprintf("%s.%s", outputName, format))
-			exportErr = s.exportMergedSegments(ctx, inputPath, mergedPath, segments, onProgress)
+			exportErr = s.exportMergedSegments(ctx, inputPath, mergedPath, segments, request, onProgress)
 			if exportErr == nil {
 				outputFiles = append(outputFiles, mergedPath)
 			}
@@ -275,7 +276,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 	)
 }
 
-func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, outputPath string, segments []models.Segment, onProgress ffmpeg.ProgressCallback) error {
+func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, outputPath string, segments []models.Segment, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) error {
 	// Cut each segment to temp files
 	tempFiles := make([]string, len(segments))
 
@@ -312,10 +313,11 @@ func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, 
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.String("tempFile", tempFile),
+			zap.Bool("hasFilters", s.hasFilters(request)),
 		)
 
-		// Cut segment (no progress callback for individual segments)
-		if err := s.ffmpeg.CutVideo(ctx, inputPath, tempFile, seg.Start, end, nil); err != nil {
+		// Cut segment with optional filters (no progress callback for individual segments)
+		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, tempFile, seg.Start, end, request, nil); err != nil {
 			return fmt.Errorf("failed to cut segment %d: %w", i, err)
 		}
 	}
@@ -332,7 +334,7 @@ func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, 
 	return nil
 }
 
-func (s *OperationService) exportMultipleSegments(ctx context.Context, inputPath, outputBaseName, format string, segments []models.Segment, onProgress ffmpeg.ProgressCallback) ([]string, error) {
+func (s *OperationService) exportMultipleSegments(ctx context.Context, inputPath, outputBaseName, format string, segments []models.Segment, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) ([]string, error) {
 	var outputFiles []string
 
 	for i, seg := range segments {
@@ -349,9 +351,10 @@ func (s *OperationService) exportMultipleSegments(ctx context.Context, inputPath
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.Float64("duration", end-seg.Start),
+			zap.Bool("hasFilters", s.hasFilters(request)),
 		)
 
-		if err := s.ffmpeg.CutVideo(ctx, inputPath, outputPath, seg.Start, end, onProgress); err != nil {
+		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, request, onProgress); err != nil {
 			return outputFiles, fmt.Errorf("failed to export segment %d: %w", i, err)
 		}
 
@@ -498,4 +501,116 @@ func (s *OperationService) GetStatus(operationID string) (*models.Operation, err
 		return nil, fmt.Errorf("operation not found: %s", operationID)
 	}
 	return operation, nil
+}
+
+// buildFilterOptions creates FilterOptions from ExportRequest
+func (s *OperationService) buildFilterOptions(request models.ExportRequest) ffmpeg.FilterOptions {
+	opts := ffmpeg.FilterOptions{
+		CropEnabled: request.CropEnabled,
+		CropX:       request.CropX,
+		CropY:       request.CropY,
+		CropWidth:   request.CropWidth,
+		CropHeight:  request.CropHeight,
+	}
+
+	// Add blur regions for manual mode
+	if request.BlurMode == "manual" && len(request.BlurRegions) > 0 {
+		for _, region := range request.BlurRegions {
+			opts.BlurRegions = append(opts.BlurRegions, ffmpeg.BlurRegionFilter{
+				X:             region.X,
+				Y:             region.Y,
+				Width:         region.Width,
+				Height:        region.Height,
+				StartTime:     region.StartTime,
+				EndTime:       region.EndTime,
+				BlurIntensity: region.BlurIntensity,
+			})
+		}
+	}
+
+	return opts
+}
+
+// hasFilters checks if any filters are enabled in the request
+func (s *OperationService) hasFilters(request models.ExportRequest) bool {
+	return request.CropEnabled || (request.BlurMode == "manual" && len(request.BlurRegions) > 0)
+}
+
+// needsAutoBlur checks if auto face blur is requested
+func (s *OperationService) needsAutoBlur(request models.ExportRequest) bool {
+	return request.BlurMode == "auto"
+}
+
+// cutVideoWithOptionalFilters cuts video with or without filters based on request
+func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inputPath, outputPath string, start, end float64, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) error {
+	// First, cut the video (with crop/manual blur if needed)
+	var tempOutput string
+	var finalOutput string
+
+	if s.needsAutoBlur(request) {
+		// If auto-blur is needed, cut to temp file first
+		tempOutput = outputPath + ".temp_cut.mp4"
+		finalOutput = outputPath
+	} else {
+		tempOutput = outputPath
+		finalOutput = outputPath
+	}
+
+	// Cut with optional crop/manual blur
+	var err error
+	if s.hasFilters(request) {
+		filterOpts := s.buildFilterOptions(request)
+		err = s.ffmpeg.CutVideoWithFilters(ctx, inputPath, tempOutput, start, end, filterOpts, func(p float64) {
+			if onProgress != nil {
+				if s.needsAutoBlur(request) {
+					onProgress(p * 0.5) // First 50% for cutting
+				} else {
+					onProgress(p)
+				}
+			}
+		})
+	} else {
+		err = s.ffmpeg.CutVideo(ctx, inputPath, tempOutput, start, end, func(p float64) {
+			if onProgress != nil {
+				if s.needsAutoBlur(request) {
+					onProgress(p * 0.5) // First 50% for cutting
+				} else {
+					onProgress(p)
+				}
+			}
+		})
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Apply auto face blur if needed
+	if s.needsAutoBlur(request) {
+		s.logger.Info("Applying auto face blur",
+			zap.String("tempOutput", tempOutput),
+			zap.String("finalOutput", finalOutput),
+			zap.Int("intensity", request.BlurAutoIntensity),
+		)
+
+		intensity := request.BlurAutoIntensity
+		if intensity <= 0 {
+			intensity = 25 // Default
+		}
+
+		err = s.ffmpeg.BlurFacesAuto(ctx, tempOutput, finalOutput, intensity, func(p float64) {
+			if onProgress != nil {
+				onProgress(0.5 + (p * 0.5)) // Last 50% for face blur
+			}
+		})
+
+		// Clean up temp file
+		s.storage.DeleteFile(tempOutput)
+
+		if err != nil {
+			return fmt.Errorf("auto face blur failed: %w", err)
+		}
+	}
+
+	return nil
 }
