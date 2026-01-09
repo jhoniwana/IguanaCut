@@ -3,7 +3,6 @@ import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkip
 import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2 } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
-import IntroOutroSelector from './IntroOutroSelector';
 
 // Clean, modern colors
 const colors = {

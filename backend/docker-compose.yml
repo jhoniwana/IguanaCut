@@ -2,9 +2,11 @@ version: '3.8'
 
 services:
   losslesscut:
-    build: .
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080:8082"
     volumes:
       - ./data:/var/losslesscut
       - ./config:/etc/losslesscut
@@ -13,7 +15,7 @@ services:
       - LOSSLESSCUT_STORAGE_BASE_PATH=/var/losslesscut
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
       interval: 30s
       timeout: 10s
       retries: 3

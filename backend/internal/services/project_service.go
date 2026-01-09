@@ -94,6 +94,11 @@ func (s *ProjectService) List() ([]*models.Project, error) {
 func (s *ProjectService) Save(project *models.Project) error {
 	project.UpdatedAt = time.Now()
 
+	// Ensure projects directory exists
+	if err := os.MkdirAll(s.storage.ProjectsDir(), 0755); err != nil {
+		return fmt.Errorf("failed to create projects directory: %w", err)
+	}
+
 	data, err := json.MarshalIndent(project, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal project: %w", err)
