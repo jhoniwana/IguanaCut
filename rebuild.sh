@@ -16,14 +16,10 @@ cd backend
 echo "🛑 Deteniendo contenedores existentes..."
 docker-compose down
 
-echo ""
-echo "📦 Reconstruyendo imagen Docker..."
-docker-compose build
-
 if [ $? -eq 0 ]; then
     echo ""
-    echo "🚀 Iniciando contenedores con la nueva imagen..."
-    docker-compose up -d
+    echo "📦 Reconstruyendo e iniciando contenedores..."
+    docker-compose up -d --build
 
     if [ $? -eq 0 ]; then
         echo ""
@@ -41,13 +37,13 @@ if [ $? -eq 0 ]; then
         docker-compose ps
     else
         echo ""
-        echo "❌ Error al iniciar el servidor"
+        echo "❌ Error al reconstruir/iniciar el servidor"
         echo "   Revisa los logs con: cd backend && docker-compose logs"
         exit 1
     fi
 else
     echo ""
-    echo "❌ Error al reconstruir la imagen"
+    echo "❌ Error al detener contenedores"
     exit 1
 fi
 

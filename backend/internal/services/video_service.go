@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,6 +137,11 @@ func (s *VideoService) CaptureScreenshot(videoID string, timestamp float64) (str
 	screenshotID := generateVideoID()
 	screenshotPath := s.storage.GetScreenshotPath(screenshotID)
 
+	// Ensure screenshots directory exists
+	if err := os.MkdirAll(s.storage.ScreenshotsDir(), 0755); err != nil {
+		return "", fmt.Errorf("failed to create screenshots directory: %w", err)
+	}
+
 	// Capture screenshot using FFmpeg
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -171,6 +177,11 @@ func (s *VideoService) GenerateWaveform(videoID string) (string, error) {
 	// Check if waveform already exists
 	if s.storage.FileExists(waveformPath) {
 		return waveformPath, nil
+	}
+
+	// Ensure waveforms directory exists
+	if err := os.MkdirAll(s.storage.WaveformsDir(), 0755); err != nil {
+		return "", fmt.Errorf("failed to create waveforms directory: %w", err)
 	}
 
 	// Generate waveform using FFmpeg
