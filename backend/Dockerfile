@@ -40,11 +40,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
+# Install yt-dlp and OpenCV for face detection
+RUN pip3 install --no-cache-dir --break-system-packages \
+    yt-dlp \
+    opencv-python-headless \
+    numpy
 
 # Verify installations
-RUN ffmpeg -version && yt-dlp --version
+RUN ffmpeg -version && yt-dlp --version && python3 -c "import cv2; print('OpenCV:', cv2.__version__)"
 
 # Create non-root user
 RUN groupadd -g 1000 losslesscut && \
@@ -65,8 +68,11 @@ COPY --from=frontend-builder /app/backend/web ./web
 # Copy config
 COPY backend/config/config.yaml /etc/losslesscut/config.yaml
 
-# Make binary executable
-RUN chmod +x ./server && chown losslesscut:losslesscut ./server
+# Copy face blur script
+COPY backend/scripts/blur_faces.py ./scripts/blur_faces.py
+
+# Make binary and scripts executable
+RUN chmod +x ./server ./scripts/blur_faces.py && chown -R losslesscut:losslesscut ./server ./scripts
 
 # Use non-root user
 USER losslesscut
