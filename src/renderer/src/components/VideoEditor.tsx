@@ -132,6 +132,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       if (e.target instanceof HTMLInputElement) return;
       if (!videoRef.current) return;
 
+      // Don't capture time during seeking - wait for it to complete
+      if (isSeekingRef.current) return;
+
+      // Use the actual video time for accuracy
       const time = videoRef.current.currentTime;
       switch (e.key.toLowerCase()) {
         case ' ':
@@ -213,19 +217,31 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const animFrameRef = useRef<number | null>(null);
   const lastUpdateTime = useRef<number>(0);
   
-  // Optimized seek function with debouncing
+  // Optimized seek function - waits for actual seek completion
   const seekVideo = useCallback((newTime: number) => {
     if (!videoRef.current) return;
-    
+
     // Set seeking flag to prevent time update conflicts
     isSeekingRef.current = true;
-    videoRef.current.currentTime = newTime;
-    
-    // Update state after a short delay to allow video to settle
-    setTimeout(() => {
-      setCurrentTime(newTime);
+
+    const handleSeeked = () => {
+      // Update state with the ACTUAL time after seek completes
+      if (videoRef.current) {
+        setCurrentTime(videoRef.current.currentTime);
+      }
       isSeekingRef.current = false;
-    }, 50);
+      videoRef.current?.removeEventListener('seeked', handleSeeked);
+    };
+
+    videoRef.current.addEventListener('seeked', handleSeeked);
+    videoRef.current.currentTime = newTime;
+
+    // Fallback timeout in case seeked event doesn't fire
+    setTimeout(() => {
+      if (isSeekingRef.current) {
+        handleSeeked();
+      }
+    }, 200);
   }, []);
   
   useEffect(() => {
@@ -363,6 +379,8 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   };
 
   const handleMarkStart = () => {
+    // Don't mark during seeking
+    if (isSeekingRef.current) return;
     const time = videoRef.current?.currentTime ?? currentTime;
     // If editing a clip, update its start time
     if (editingClipId) {
@@ -378,6 +396,8 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   };
 
   const handleMarkEnd = () => {
+    // Don't mark during seeking
+    if (isSeekingRef.current) return;
     const end = videoRef.current?.currentTime ?? currentTime;
     setCurrentTime(end);
 
