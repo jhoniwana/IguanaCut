@@ -1,13 +1,12 @@
-version: '3.8'
-
 services:
   losslesscut:
-    build: .
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/var/losslesscut
-      - ./config:/etc/losslesscut
+      - losslesscut_data:/var/losslesscut
     environment:
       - LOSSLESSCUT_SERVER_PORT=8080
       - LOSSLESSCUT_STORAGE_BASE_PATH=/var/losslesscut
@@ -18,3 +17,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  losslesscut_data:

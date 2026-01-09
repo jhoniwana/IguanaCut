@@ -1,87 +1,72 @@
 # =====================================
-# Stage 1: Build Frontend (React/Vite)
+# Stage 1: Build Frontend
 # =====================================
-FROM node:18-alpine AS frontend-builder
+FROM node:18-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package.json yarn.lock ./
+COPY .yarn ./.yarn
+COPY .yarnrc.yml ./
 
 # Install dependencies
-RUN yarn install --frozen-lockfile
+RUN yarn install
 
-# Copy source code
+# Copy source code and configs
 COPY src ./src
-COPY public ./public
-COPY index.html ./
-COPY vite.config.ts ./
+COPY vite.config.web.ts ./
 COPY tsconfig.json ./
 COPY tsconfig.*.json ./
-COPY electron.vite.config.ts ./
 
-# Build frontend for web (not Electron)
-# This builds the renderer as a standalone web app
+# Create output directory
+RUN mkdir -p backend/web
+
+# Build frontend for web
 ENV VITE_API_URL=http://localhost:8080
 RUN yarn build:web
 
 # =====================================
-# Stage 2: Build Backend (Go)
+# Stage 2: Runtime Image
 # =====================================
-FROM golang:1.21-alpine AS backend-builder
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Copy go mod files
-COPY backend/go.mod backend/go.sum ./
-RUN go mod download
-
-# Copy backend source
-COPY backend/ ./
-
-# Build the Go server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
-
-# =====================================
-# Stage 3: Final Runtime Image
-# =====================================
-FROM alpine:latest
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    ffmpeg-libs \
     python3 \
-    py3-pip \
-    ca-certificates
+    python3-pip \
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install yt-dlp
-RUN pip3 install --no-cache-dir yt-dlp
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
 
 # Verify installations
 RUN ffmpeg -version && yt-dlp --version
 
 # Create non-root user
-RUN addgroup -g 1000 losslesscut && \
-    adduser -D -u 1000 -G losslesscut losslesscut
+RUN groupadd -g 1000 losslesscut && \
+    useradd -u 1000 -g losslesscut -m losslesscut
 
-# Create directories
-RUN mkdir -p /var/losslesscut /app/web && \
+# Create directories with proper structure
+RUN mkdir -p /var/losslesscut/uploads /var/losslesscut/outputs /var/losslesscut/projects /app/web && \
     chown -R losslesscut:losslesscut /var/losslesscut /app
 
 WORKDIR /app
 
-# Copy Go backend binary
-COPY --from=backend-builder /app/server ./server
+# Copy pre-built Go binary (we don't have Go source)
+COPY backend/lossless-cut-server ./server
 
-# Copy frontend build
-COPY --from=frontend-builder /app/dist ./web
+# Copy frontend build from stage 1
+COPY --from=frontend-builder /app/backend/web ./web
 
 # Copy config
 COPY backend/config/config.yaml /etc/losslesscut/config.yaml
+
+# Make binary executable
+RUN chmod +x ./server && chown losslesscut:losslesscut ./server
 
 # Use non-root user
 USER losslesscut
