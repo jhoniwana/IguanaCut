@@ -1,46 +1,76 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  IoMdCloudDownload,
   IoMdCloudUpload,
   IoMdTrash,
   IoMdPlay,
   IoMdCut,
   IoMdDownload,
-  IoMdHelpCircle
+  IoMdHelpCircle,
+  IoMdFolder,
+  IoMdFilm,
+  IoMdRefresh,
+  IoMdClose,
+  IoMdTime,
+  IoMdCheckmarkCircle
 } from 'react-icons/io';
-import { FiScissors, FiUpload } from 'react-icons/fi';
-import { FaGithub } from 'react-icons/fa';
-import DownloadModal from './components/DownloadModal';
+import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload } from 'react-icons/fi';
+import { MdBlurOn } from 'react-icons/md';
+import { IoMdCloudDownload } from 'react-icons/io';
 import VideoEditor from './components/VideoEditor';
+
+// Import Gemstone Inc logo
+import gemstonelogo from './assets/logo.png';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
+// Gemstone Inc inspired colors
 const colors = {
-  bg: '#0f0f0f',
-  surface: '#1a1a1a',
-  card: '#222222',
-  border: '#333333',
-  primary: '#10b981',
-  secondary: '#3b82f6',
-  accent: '#f59e0b',
-  danger: '#ef4444',
+  bg: '#0a0a0f',
+  surface: '#12121a',
+  card: '#1a1a24',
+  border: '#2a2a3a',
+  primary: '#00E5FF',
+  secondary: '#FF148A',
+  accent: '#FFC800',
+  danger: '#ff4466',
+  success: '#00FF88',
   text: '#ffffff',
-  textSecondary: '#a1a1a1',
-  textMuted: '#666666',
+  textSecondary: '#b0b0c0',
+  textMuted: '#606070',
+  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
+  gradientAccent: 'linear-gradient(135deg, #FF148A 0%, #FFC800 100%)',
 };
 
-// SVG pattern de lagartijas minimalistas
-const lizardPattern = `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23222222' stroke-width='0.8' opacity='0.4'%3E%3Cpath d='M30 15 Q25 18 22 22 L18 20 M22 22 Q20 28 22 32 Q18 35 15 34 M22 32 Q26 36 30 35 Q34 36 38 32 M38 32 Q42 35 45 34 M38 32 Q40 28 38 22 L42 20 M38 22 Q35 18 30 15'/%3E%3Ccircle cx='27' cy='20' r='1'/%3E%3Ccircle cx='33' cy='20' r='1'/%3E%3C/g%3E%3C/svg%3E")`;
+interface VideoFile {
+  id: string;
+  filename: string;
+  original_filename: string;
+  size: number;
+  duration: number;
+  format: string;
+  created_at: string;
+}
 
 export default function App() {
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
-  const [downloadedVideoId, setDownloadedVideoId] = useState<string | null>(null);
+  const [showFileManager, setShowFileManager] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [videos, setVideos] = useState<VideoFile[]>([]);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
   const sessionIdRef = useRef<string>(generateSessionId());
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+
+  // YouTube/URL Download states
+  const [fileManagerTab, setFileManagerTab] = useState<'files' | 'download'>('files');
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloadId, setDownloadId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     const initSession = async () => {
@@ -84,9 +114,34 @@ export default function App() {
     };
   }, []);
 
-  const handleDownloadComplete = (download: any) => {
-    setDownloadedVideoId(download.video_id);
-    setShowDownloadModal(false);
+  const loadVideos = async () => {
+    setIsLoadingVideos(true);
+    try {
+      const res = await fetch('/api/videos');
+      if (res.ok) {
+        const data = await res.json();
+        setVideos(data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load videos:', error);
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
+  const deleteVideo = async (id: string) => {
+    if (!confirm('¿Eliminar este video?')) return;
+    try {
+      await fetch(`/api/videos/${id}`, { method: 'DELETE' });
+      setVideos(videos.filter(v => v.id !== id));
+    } catch (error) {
+      console.error('Failed to delete video:', error);
+    }
+  };
+
+  const openVideoInEditor = (videoId: string) => {
+    setSelectedVideoId(videoId);
+    setShowFileManager(false);
     setShowEditor(true);
   };
 
@@ -95,6 +150,7 @@ export default function App() {
     setIsClearing(true);
     try {
       await fetch('/api/system/clear-all', { method: 'DELETE' });
+      setVideos([]);
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     } finally {
@@ -102,88 +158,215 @@ export default function App() {
     }
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Start download from URL (YouTube, etc.)
+  const startDownload = async () => {
+    if (!downloadUrl.trim()) return;
+
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setDownloadStatus('Iniciando descarga...');
+    setDownloadError(null);
+
+    try {
+      const res = await fetch('/api/downloads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: downloadUrl.trim() }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        try {
+          const errorData = JSON.parse(text);
+          throw new Error(errorData.error || 'Error al iniciar descarga');
+        } catch {
+          throw new Error('Error al iniciar descarga');
+        }
+      }
+
+      const data = await res.json();
+      setDownloadId(data.id);
+      pollDownloadStatus(data.id);
+    } catch (error: any) {
+      setDownloadError(error.message || 'Error desconocido');
+      setIsDownloading(false);
+    }
+  };
+
+  // Poll download status
+  const pollDownloadStatus = async (id: string) => {
+    let retries = 0;
+    const maxRetries = 300; // 5 minutes max
+
+    const poll = setInterval(async () => {
+      retries++;
+      if (retries > maxRetries) {
+        clearInterval(poll);
+        setIsDownloading(false);
+        setDownloadError('Tiempo de espera agotado');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/downloads/${id}`);
+        if (!res.ok) throw new Error('Failed to get status');
+
+        const data = await res.json();
+        const progress = data.progress || 0;
+        setDownloadProgress(progress);
+
+        // Better status text
+        if (data.status === 'downloading') {
+          setDownloadStatus(`Descargando... ${progress.toFixed(1)}%`);
+        } else if (data.status === 'processing') {
+          setDownloadStatus('Procesando video...');
+        } else {
+          setDownloadStatus(data.status_text || data.status || 'Trabajando...');
+        }
+
+        if (data.status === 'completed') {
+          clearInterval(poll);
+          setIsDownloading(false);
+          setDownloadUrl('');
+          setDownloadId(null);
+          setDownloadProgress(100);
+          setDownloadStatus('¡Descarga completada!');
+
+          // Get the video ID and open editor automatically
+          const videoId = data.video_id;
+          if (videoId) {
+            setShowFileManager(false);
+            setSelectedVideoId(videoId);
+            setShowEditor(true);
+          } else {
+            // Fallback: reload videos and switch to files tab
+            loadVideos();
+            setTimeout(() => {
+              setFileManagerTab('files');
+            }, 500);
+          }
+        } else if (data.status === 'failed' || data.status === 'error') {
+          clearInterval(poll);
+          setIsDownloading(false);
+          setDownloadError(data.error || data.status_text || 'Descarga fallida');
+        }
+      } catch (error) {
+        // Don't stop on network errors, just log
+        console.warn('Poll error:', error);
+      }
+    }, 1000);
+  };
+
   const tutorialSteps = [
     {
       step: 1,
-      icon: <FiUpload size={32} />,
+      icon: <FiUpload size={28} />,
       title: 'Sube tu video',
-      description: 'Haz clic en "Subir Video" y selecciona un archivo de tu computadora. También puedes descargar videos de YouTube u otras plataformas.',
+      description: 'Selecciona un archivo de tu computadora para comenzar a editarlo.',
     },
     {
       step: 2,
-      icon: <IoMdPlay size={32} />,
+      icon: <IoMdPlay size={28} />,
       title: 'Navega al punto de inicio',
-      description: 'Reproduce el video y pausa donde quieres comenzar tu clip. Usa las flechas ← → para moverte 1 segundo, o Shift+flechas para 0.1 segundos.',
+      description: 'Usa las flechas ← → para moverte. Shift+flechas para movimientos precisos.',
     },
     {
       step: 3,
-      icon: <span style={{ fontSize: '28px', fontWeight: 'bold' }}>I</span>,
-      title: 'Marca el inicio (IN)',
-      description: 'Presiona la tecla "I" o el botón "I Mark IN" para marcar el punto de inicio de tu clip.',
+      icon: <span style={{ fontSize: '24px', fontWeight: 'bold', color: colors.accent }}>I</span>,
+      title: 'Marca el inicio',
+      description: 'Presiona "I" para marcar donde inicia tu clip.',
     },
     {
       step: 4,
-      icon: <span style={{ fontSize: '28px', fontWeight: 'bold' }}>O</span>,
-      title: 'Marca el final (OUT)',
-      description: 'Navega al punto final y presiona "O" o el botón "O Mark OUT". ¡Tu clip se creará automáticamente!',
+      icon: <span style={{ fontSize: '24px', fontWeight: 'bold', color: colors.secondary }}>O</span>,
+      title: 'Marca el final',
+      description: 'Presiona "O" para crear el clip automáticamente.',
     },
     {
       step: 5,
-      icon: <IoMdCut size={32} />,
-      title: 'Repite para más clips',
-      description: 'Puedes crear múltiples clips. Cada uno aparecerá en el panel lateral derecho. Marca/desmarca los que quieras incluir.',
+      icon: <MdBlurOn size={28} />,
+      title: 'Censura rostros',
+      description: 'Activa la censura automática de rostros en los clips que necesites.',
     },
     {
       step: 6,
-      icon: <IoMdDownload size={32} />,
-      title: 'Exporta y descarga',
-      description: 'Elige "Combinado" para un solo archivo o "Separados" para archivos individuales. Haz clic en exportar y luego descarga tu video.',
+      icon: <IoMdDownload size={28} />,
+      title: 'Exporta',
+      description: 'Descarga tu video editado sin perder calidad.',
     },
   ];
 
   return (
     <div style={{
-      background: `${colors.bg} ${lizardPattern}`,
-      backgroundSize: '60px 60px',
+      background: `radial-gradient(ellipse at 50% 0%, ${colors.surface} 0%, ${colors.bg} 70%)`,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Header Simple */}
+      {/* Header - Gemstone Style */}
       <header style={{
-        background: colors.surface,
-        padding: '20px',
+        background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
+        padding: '20px 24px',
         borderBottom: `1px solid ${colors.border}`,
+        boxShadow: '0 4px 30px rgba(0, 0, 0, 0.3)',
       }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '36px' }}>✂️</span>
+        <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <img
+              src={gemstonelogo}
+              alt="Gemstone Inc"
+              style={{
+                height: '48px',
+                width: 'auto',
+                filter: 'drop-shadow(0 2px 8px rgba(0, 229, 255, 0.3))',
+              }}
+            />
             <div>
-              <h1 style={{ margin: 0, fontSize: '24px', color: colors.text, fontWeight: '700' }}>
-                Cortador de Video
+              <h1 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '600',
+                color: colors.textSecondary,
+              }}>
+                Video Studio
               </h1>
-              <p style={{ margin: 0, fontSize: '12px', color: colors.textMuted }}>
-                Sin pérdida de calidad
+              <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>
+                Edición profesional sin pérdida
               </p>
             </div>
           </div>
           <button
             onClick={() => setShowTutorial(true)}
             style={{
-              background: colors.card,
+              background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
               border: `1px solid ${colors.border}`,
               color: colors.text,
-              padding: '10px 16px',
-              borderRadius: '8px',
+              padding: '10px 18px',
+              borderRadius: '12px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               fontSize: '14px',
+              fontWeight: '500',
+              transition: 'all 0.2s ease',
             }}
           >
-            <IoMdHelpCircle size={18} />
+            <IoMdHelpCircle size={18} color={colors.primary} />
             ¿Cómo funciona?
           </button>
         </div>
@@ -196,29 +379,49 @@ export default function App() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '40px 20px',
-        maxWidth: '600px',
+        padding: '50px 20px',
+        maxWidth: '700px',
         margin: '0 auto',
         width: '100%',
       }}>
-        {/* Welcome Message */}
+        {/* Logo & Welcome */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <div style={{
+            marginBottom: '24px',
+            padding: '16px',
+            background: `linear-gradient(145deg, rgba(26, 26, 36, 0.6) 0%, rgba(18, 18, 26, 0.8) 100%)`,
+            borderRadius: '20px',
+            display: 'inline-block',
+            border: `1px solid ${colors.border}`,
+            boxShadow: '0 8px 40px rgba(0, 229, 255, 0.15)',
+          }}>
+            <img
+              src={gemstonelogo}
+              alt="Gemstone Inc"
+              style={{
+                height: '70px',
+                width: 'auto',
+                filter: 'drop-shadow(0 4px 12px rgba(0, 229, 255, 0.4))',
+              }}
+            />
+          </div>
           <h2 style={{
             color: colors.text,
-            fontSize: '28px',
+            fontSize: '26px',
             fontWeight: '600',
             marginBottom: '12px',
           }}>
-            Corta videos fácilmente
+            Edita videos como un profesional
           </h2>
           <p style={{
             color: colors.textSecondary,
-            fontSize: '16px',
+            fontSize: '15px',
             lineHeight: '1.6',
-            maxWidth: '450px',
+            maxWidth: '480px',
             margin: '0 auto',
           }}>
-            Selecciona las partes que quieres conservar de tu video y expórtalas sin perder calidad.
+            Corta, recorta y censura rostros en tus videos sin perder calidad.
+            Simple, rápido y poderoso.
           </p>
         </div>
 
@@ -226,27 +429,29 @@ export default function App() {
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
+          gap: '14px',
           width: '100%',
-          maxWidth: '400px',
+          maxWidth: '420px',
         }}>
           <motion.button
-            whileHover={{ scale: 1.02 }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(0, 229, 255, 0.4)' }}
             whileTap={{ scale: 0.98 }}
             onClick={() => setShowEditor(true)}
             style={{
-              background: colors.primary,
+              background: colors.gradient,
               color: '#fff',
               padding: '20px 32px',
-              borderRadius: '12px',
-              fontSize: '18px',
-              fontWeight: '600',
+              borderRadius: '9999px',
+              fontSize: '17px',
+              fontWeight: '700',
               border: 'none',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '12px',
+              boxShadow: '0 6px 25px rgba(0, 229, 255, 0.3)',
+              transition: 'box-shadow 0.2s ease',
             }}
           >
             <IoMdCloudUpload size={24} />
@@ -254,15 +459,47 @@ export default function App() {
           </motion.button>
 
           <motion.button
-            whileHover={{ scale: 1.02 }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 200, 0, 0.4)' }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setShowDownloadModal(true)}
+            onClick={() => {
+              setFileManagerTab('download');
+              setShowFileManager(true);
+            }}
             style={{
-              background: colors.secondary,
-              color: '#fff',
+              background: colors.accent,
+              color: '#000',
               padding: '20px 32px',
-              borderRadius: '12px',
-              fontSize: '18px',
+              borderRadius: '9999px',
+              fontSize: '17px',
+              fontWeight: '700',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              boxShadow: '0 6px 25px rgba(255, 200, 0, 0.3)',
+              transition: 'box-shadow 0.2s ease',
+            }}
+          >
+            <FiLink size={22} />
+            Descargar desde URL
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 20, 138, 0.4)' }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setFileManagerTab('files');
+              loadVideos();
+              setShowFileManager(true);
+            }}
+            style={{
+              background: colors.gradientAccent,
+              color: '#fff',
+              padding: '16px 32px',
+              borderRadius: '9999px',
+              fontSize: '15px',
               fontWeight: '600',
               border: 'none',
               cursor: 'pointer',
@@ -270,56 +507,90 @@ export default function App() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '12px',
+              boxShadow: '0 6px 25px rgba(255, 20, 138, 0.3)',
+              transition: 'box-shadow 0.2s ease',
             }}
           >
-            <IoMdCloudDownload size={24} />
-            Descargar de Internet
+            <FiHardDrive size={22} />
+            Mis Archivos
           </motion.button>
         </div>
 
-        {/* Quick Tutorial Preview */}
+        {/* Quick Features */}
         <div style={{
-          marginTop: '48px',
-          padding: '24px',
-          background: colors.surface,
-          borderRadius: '12px',
+          marginTop: '50px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '16px',
+          width: '100%',
+          maxWidth: '500px',
+        }}>
+          {[
+            { icon: <IoMdCut size={24} />, label: 'Corte preciso', color: colors.primary },
+            { icon: <MdBlurOn size={24} />, label: 'Censura rostros', color: colors.secondary },
+            { icon: <IoMdCheckmarkCircle size={24} />, label: 'Sin pérdida', color: colors.success },
+          ].map((feature, i) => (
+            <div key={i} style={{
+              background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '16px',
+              padding: '20px 16px',
+              textAlign: 'center',
+            }}>
+              <div style={{ color: feature.color, marginBottom: '8px' }}>
+                {feature.icon}
+              </div>
+              <span style={{ color: colors.textSecondary, fontSize: '12px', fontWeight: '500' }}>
+                {feature.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Keyboard Shortcuts */}
+        <div style={{
+          marginTop: '40px',
+          padding: '20px 24px',
+          background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+          borderRadius: '16px',
           border: `1px solid ${colors.border}`,
           width: '100%',
-          maxWidth: '400px',
+          maxWidth: '420px',
         }}>
           <h3 style={{
             color: colors.text,
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: '600',
-            marginBottom: '16px',
+            marginBottom: '14px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
           }}>
-            <FiScissors size={18} color={colors.primary} />
+            <span style={{ color: colors.primary }}>◆</span>
             Atajos de teclado
           </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
-              { key: 'Espacio', action: 'Reproducir / Pausar' },
-              { key: 'I', action: 'Marcar inicio del clip' },
-              { key: 'O', action: 'Marcar fin y crear clip' },
-              { key: '← →', action: 'Avanzar/retroceder 1 seg' },
+              { key: 'Espacio', action: 'Play / Pausa' },
+              { key: 'I', action: 'Marcar inicio', keyColor: colors.accent },
+              { key: 'O', action: 'Marcar fin', keyColor: colors.secondary },
+              { key: '← →', action: '±1 segundo' },
             ].map((item) => (
               <div key={item.key} style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}>
-                <span style={{ color: colors.textSecondary, fontSize: '14px' }}>{item.action}</span>
+                <span style={{ color: colors.textSecondary, fontSize: '13px' }}>{item.action}</span>
                 <span style={{
-                  background: colors.card,
-                  color: colors.primary,
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '600',
+                  background: item.keyColor || colors.card,
+                  color: item.keyColor ? '#000' : colors.primary,
+                  padding: '4px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: '700',
                   fontFamily: 'monospace',
+                  border: item.keyColor ? 'none' : `1px solid ${colors.border}`,
                 }}>
                   {item.key}
                 </span>
@@ -333,18 +604,20 @@ export default function App() {
           onClick={handleClearAll}
           disabled={isClearing}
           style={{
-            marginTop: '32px',
+            marginTop: '36px',
             background: 'transparent',
             border: `1px solid ${colors.danger}`,
             color: colors.danger,
             padding: '10px 20px',
-            borderRadius: '8px',
+            borderRadius: '9999px',
             cursor: isClearing ? 'not-allowed' : 'pointer',
             fontSize: '13px',
+            fontWeight: '500',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             opacity: isClearing ? 0.5 : 1,
+            transition: 'all 0.2s ease',
           }}
         >
           <IoMdTrash size={16} />
@@ -352,45 +625,534 @@ export default function App() {
         </button>
       </main>
 
-      {/* Footer with Credits */}
+      {/* Footer */}
       <footer style={{
         borderTop: `1px solid ${colors.border}`,
-        padding: '20px',
+        padding: '16px',
         textAlign: 'center',
+        background: colors.surface,
       }}>
-        <p style={{
-          color: colors.textMuted,
-          fontSize: '13px',
-          margin: '0 0 8px 0',
-        }}>
-          Hecho por{' '}
-          <a
-            href="https://github.com/jhoniwana"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: colors.primary, textDecoration: 'none' }}
-          >
-            <FaGithub style={{ verticalAlign: 'middle', marginRight: '4px' }} />
-            Jhon
-          </a>
-        </p>
         <p style={{
           color: colors.textMuted,
           fontSize: '12px',
           margin: 0,
         }}>
-          Basado en{' '}
-          <a
-            href="https://github.com/mifi/lossless-cut"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: colors.secondary, textDecoration: 'none' }}
-          >
-            LosslessCut
-          </a>
-          {' '}• Powered by FFmpeg
+          Powered by <span style={{ color: colors.primary }}>FFmpeg</span> •
+          <span style={{ color: colors.secondary }}> Gemstone Inc</span>
         </p>
       </footer>
+
+      {/* File Manager Modal */}
+      <AnimatePresence>
+        {showFileManager && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(10, 10, 15, 0.95)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+            onClick={() => setShowFileManager(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: `linear-gradient(180deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+                borderRadius: '24px',
+                padding: '0',
+                maxWidth: '700px',
+                width: '100%',
+                maxHeight: '80vh',
+                overflow: 'hidden',
+                border: `1px solid ${colors.border}`,
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+              }}
+            >
+              {/* File Manager Header with Tabs */}
+              <div style={{
+                background: colors.gradient,
+              }}>
+                <div style={{
+                  padding: '16px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {fileManagerTab === 'files' ? <FiHardDrive size={22} /> : <IoMdCloudDownload size={22} />}
+                    <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700' }}>
+                      {fileManagerTab === 'files' ? 'Mis Archivos' : 'Descargar Video'}
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setShowFileManager(false)}
+                    style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '8px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <IoMdClose size={20} />
+                  </button>
+                </div>
+                {/* Tabs */}
+                <div style={{
+                  display: 'flex',
+                  gap: '4px',
+                  padding: '0 16px 12px',
+                }}>
+                  <button
+                    onClick={() => setFileManagerTab('files')}
+                    style={{
+                      flex: 1,
+                      background: fileManagerTab === 'files' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: fileManagerTab === 'files' ? '700' : '500',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <FiHardDrive size={16} />
+                    Archivos ({videos.length})
+                  </button>
+                  <button
+                    onClick={() => setFileManagerTab('download')}
+                    style={{
+                      flex: 1,
+                      background: fileManagerTab === 'download' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: fileManagerTab === 'download' ? '700' : '500',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <FiLink size={16} />
+                    Descargar URL
+                  </button>
+                </div>
+              </div>
+
+              {/* Tab Content */}
+              <div style={{
+                padding: '16px',
+                maxHeight: '55vh',
+                overflowY: 'auto',
+              }}>
+                {/* Download Tab */}
+                {fileManagerTab === 'download' && (
+                  <div style={{ padding: '8px 0' }}>
+                    {/* URL Input */}
+                    <div style={{
+                      background: colors.card,
+                      borderRadius: '14px',
+                      padding: '20px',
+                      marginBottom: '16px',
+                      border: `1px solid ${colors.border}`,
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginBottom: '14px',
+                      }}>
+                        <FiLink size={20} color={colors.primary} />
+                        <span style={{ color: colors.text, fontWeight: '600', fontSize: '14px' }}>
+                          Pega la URL del video
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={downloadUrl}
+                        onChange={(e) => setDownloadUrl(e.target.value)}
+                        placeholder="https://youtube.com/watch?v=... o cualquier URL"
+                        disabled={isDownloading}
+                        style={{
+                          width: '100%',
+                          background: colors.surface,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '10px',
+                          padding: '14px 16px',
+                          color: colors.text,
+                          fontSize: '14px',
+                          outline: 'none',
+                          marginBottom: '14px',
+                        }}
+                        onKeyDown={(e) => e.key === 'Enter' && !isDownloading && startDownload()}
+                      />
+                      <button
+                        onClick={startDownload}
+                        disabled={isDownloading || !downloadUrl.trim()}
+                        style={{
+                          width: '100%',
+                          background: isDownloading ? colors.card : colors.gradient,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '9999px',
+                          padding: '14px 20px',
+                          fontSize: '15px',
+                          fontWeight: '700',
+                          cursor: isDownloading ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px',
+                          opacity: !downloadUrl.trim() ? 0.5 : 1,
+                          boxShadow: isDownloading ? 'none' : '0 4px 20px rgba(0, 229, 255, 0.3)',
+                        }}
+                      >
+                        {isDownloading ? (
+                          <>
+                            <IoMdRefresh size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                            Descargando...
+                          </>
+                        ) : (
+                          <>
+                            <FiDownload size={20} />
+                            Descargar Video
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Download Progress */}
+                    {isDownloading && (
+                      <div style={{
+                        background: colors.card,
+                        borderRadius: '14px',
+                        padding: '16px',
+                        marginBottom: '16px',
+                        border: `1px solid ${colors.border}`,
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginBottom: '10px',
+                        }}>
+                          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
+                            {downloadStatus}
+                          </span>
+                          <span style={{
+                            color: colors.primary,
+                            fontSize: '14px',
+                            fontWeight: '700',
+                            fontFamily: 'monospace',
+                          }}>
+                            {downloadProgress.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div style={{
+                          width: '100%',
+                          height: '8px',
+                          background: colors.border,
+                          borderRadius: '4px',
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{
+                            width: `${downloadProgress}%`,
+                            height: '100%',
+                            background: colors.gradient,
+                            borderRadius: '4px',
+                            transition: 'width 0.3s ease',
+                          }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Download Error */}
+                    {downloadError && (
+                      <div style={{
+                        background: `${colors.danger}22`,
+                        border: `1px solid ${colors.danger}`,
+                        borderRadius: '10px',
+                        padding: '14px',
+                        color: colors.danger,
+                        fontSize: '13px',
+                        marginBottom: '16px',
+                      }}>
+                        ⚠️ {downloadError}
+                      </div>
+                    )}
+
+                    {/* Supported Sites */}
+                    <div style={{
+                      background: colors.surface,
+                      borderRadius: '12px',
+                      padding: '16px',
+                      border: `1px solid ${colors.border}`,
+                    }}>
+                      <div style={{
+                        color: colors.textMuted,
+                        fontSize: '12px',
+                        marginBottom: '10px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>
+                        Sitios compatibles
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                      }}>
+                        {['YouTube', 'TikTok', 'Instagram', 'Twitter/X', 'Facebook', 'Vimeo', '+1000 más'].map((site) => (
+                          <span key={site} style={{
+                            background: colors.card,
+                            color: colors.textSecondary,
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                          }}>
+                            {site}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Files Tab */}
+                {fileManagerTab === 'files' && (
+                  <>
+                    {/* Refresh button */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      marginBottom: '10px',
+                    }}>
+                      <button
+                        onClick={loadVideos}
+                        disabled={isLoadingVideos}
+                        style={{
+                          background: colors.card,
+                          border: `1px solid ${colors.border}`,
+                          color: colors.textSecondary,
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <IoMdRefresh size={16} style={{
+                          animation: isLoadingVideos ? 'spin 1s linear infinite' : 'none'
+                        }} />
+                        Actualizar
+                      </button>
+                    </div>
+                    {isLoadingVideos ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px',
+                    color: colors.textMuted,
+                  }}>
+                    <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
+                    <p>Cargando archivos...</p>
+                  </div>
+                ) : videos.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '50px 20px',
+                  }}>
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      margin: '0 auto 20px',
+                      background: colors.card,
+                      borderRadius: '20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <IoMdFolder size={40} color={colors.textMuted} />
+                    </div>
+                    <h3 style={{ color: colors.text, margin: '0 0 8px', fontSize: '18px' }}>
+                      No hay archivos
+                    </h3>
+                    <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
+                      Sube un video para comenzar a editar
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowFileManager(false);
+                        setShowEditor(true);
+                      }}
+                      style={{
+                        marginTop: '20px',
+                        background: colors.gradient,
+                        color: '#fff',
+                        border: 'none',
+                        padding: '12px 24px',
+                        borderRadius: '9999px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <FiUpload size={18} />
+                      Subir Video
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {videos.map((video) => (
+                      <div
+                        key={video.id}
+                        style={{
+                          background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '14px',
+                          padding: '14px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '14px',
+                          transition: 'all 0.2s ease',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => openVideoInEditor(video.id)}
+                      >
+                        {/* Video Thumbnail/Icon */}
+                        <div style={{
+                          width: '56px',
+                          height: '56px',
+                          background: colors.gradient,
+                          borderRadius: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}>
+                          <FiVideo size={24} color="#fff" />
+                        </div>
+
+                        {/* Video Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h4 style={{
+                            margin: '0 0 4px',
+                            color: colors.text,
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {video.original_filename || video.filename}
+                          </h4>
+                          <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            color: colors.textMuted,
+                            fontSize: '12px',
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <IoMdTime size={14} />
+                              {video.duration > 0 ? formatDuration(video.duration) : '--:--'}
+                            </span>
+                            <span>{formatFileSize(video.size)}</span>
+                            <span style={{
+                              background: colors.card,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              color: colors.primary,
+                              fontWeight: '500',
+                            }}>
+                              {video.format?.toUpperCase() || 'VIDEO'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openVideoInEditor(video.id);
+                            }}
+                            style={{
+                              background: colors.primary,
+                              border: 'none',
+                              color: '#000',
+                              padding: '8px 14px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <IoMdCut size={14} />
+                            Editar
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteVideo(video.id);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: `1px solid ${colors.danger}`,
+                              color: colors.danger,
+                              padding: '8px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                            title="Eliminar"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Tutorial Modal */}
       <AnimatePresence>
@@ -402,7 +1164,8 @@ export default function App() {
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,0.9)',
+              background: 'rgba(10, 10, 15, 0.95)',
+              backdropFilter: 'blur(8px)',
               zIndex: 200,
               display: 'flex',
               alignItems: 'center',
@@ -413,55 +1176,75 @@ export default function App() {
             onClick={() => setShowTutorial(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              exit={{ scale: 0.95, opacity: 0 }}
               onClick={e => e.stopPropagation()}
               style={{
-                background: colors.surface,
-                borderRadius: '16px',
-                padding: '32px',
+                background: `linear-gradient(180deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+                borderRadius: '24px',
+                padding: '28px',
                 maxWidth: '600px',
                 width: '100%',
                 maxHeight: '90vh',
                 overflowY: 'auto',
+                border: `1px solid ${colors.border}`,
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ color: colors.text, margin: 0, fontSize: '22px', fontWeight: '600' }}>
-                  ¿Cómo usar el cortador de video?
-                </h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    background: colors.gradient,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <span style={{ fontSize: '20px' }}>◆</span>
+                  </div>
+                  <h2 style={{ color: colors.text, margin: 0, fontSize: '20px', fontWeight: '700' }}>
+                    ¿Cómo usar?
+                  </h2>
+                </div>
                 <button
                   onClick={() => setShowTutorial(false)}
                   style={{
-                    background: 'transparent',
-                    border: 'none',
+                    background: colors.card,
+                    border: `1px solid ${colors.border}`,
                     color: colors.textMuted,
-                    fontSize: '24px',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
                     cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
-                  ×
+                  <IoMdClose size={20} />
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {tutorialSteps.map((step) => (
                   <div
                     key={step.step}
                     style={{
                       display: 'flex',
-                      gap: '16px',
-                      padding: '16px',
-                      background: colors.card,
-                      borderRadius: '12px',
+                      gap: '14px',
+                      padding: '14px',
+                      background: colors.surface,
+                      borderRadius: '14px',
                       border: `1px solid ${colors.border}`,
                     }}
                   >
                     <div style={{
-                      width: '56px',
-                      height: '56px',
-                      background: colors.primary,
+                      width: '50px',
+                      height: '50px',
+                      background: colors.gradient,
                       borderRadius: '12px',
                       display: 'flex',
                       alignItems: 'center',
@@ -476,31 +1259,31 @@ export default function App() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        marginBottom: '6px',
+                        marginBottom: '4px',
                       }}>
                         <span style={{
                           background: colors.primary,
-                          color: '#fff',
-                          width: '22px',
-                          height: '22px',
+                          color: '#000',
+                          width: '20px',
+                          height: '20px',
                           borderRadius: '50%',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '12px',
+                          fontSize: '11px',
                           fontWeight: '700',
                         }}>
                           {step.step}
                         </span>
-                        <h4 style={{ color: colors.text, margin: 0, fontSize: '15px', fontWeight: '600' }}>
+                        <h4 style={{ color: colors.text, margin: 0, fontSize: '14px', fontWeight: '600' }}>
                           {step.title}
                         </h4>
                       </div>
                       <p style={{
                         color: colors.textSecondary,
                         margin: 0,
-                        fontSize: '14px',
-                        lineHeight: '1.5',
+                        fontSize: '13px',
+                        lineHeight: '1.4',
                       }}>
                         {step.description}
                       </p>
@@ -513,41 +1296,44 @@ export default function App() {
                 onClick={() => setShowTutorial(false)}
                 style={{
                   width: '100%',
-                  marginTop: '24px',
-                  background: colors.primary,
+                  marginTop: '20px',
+                  background: colors.gradient,
                   color: '#fff',
                   padding: '14px',
-                  borderRadius: '10px',
+                  borderRadius: '9999px',
                   border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
+                  fontSize: '15px',
+                  fontWeight: '700',
                   cursor: 'pointer',
+                  boxShadow: '0 4px 20px rgba(0, 229, 255, 0.3)',
                 }}
               >
-                ¡Entendido, empezar!
+                ¡Entendido!
               </button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <DownloadModal
-        isOpen={showDownloadModal}
-        onClose={() => setShowDownloadModal(false)}
-        onDownloadComplete={handleDownloadComplete}
-      />
-
       <AnimatePresence>
         {showEditor && (
           <VideoEditor
             onClose={() => {
               setShowEditor(false);
-              setDownloadedVideoId(null);
+              setSelectedVideoId(null);
             }}
-            initialVideoId={downloadedVideoId}
+            initialVideoId={selectedVideoId}
           />
         )}
       </AnimatePresence>
+
+      {/* CSS Animation for spinner */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

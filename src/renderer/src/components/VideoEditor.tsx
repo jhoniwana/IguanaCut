@@ -1,25 +1,32 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
-import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop } from 'react-icons/fi';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit, MdBlurOn } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
 import IntroOutroSelector from './IntroOutroSelector';
 import CropSelector, { CropConfig } from './CropSelector';
-import BlurRegionSelector, { BlurConfig } from './BlurRegionSelector';
+import BlurRegionSelector, { BlurConfig, ClipBlurZone } from './BlurRegionSelector';
 
-// Clean, modern colors
+// Import Gemstone Inc logo
+import gemstonelogo from '../assets/logo.png';
+
+// Gemstone Inc inspired colors - Modern luxury aesthetic
 const colors = {
-  bg: '#0f0f0f',
-  surface: '#1a1a1a',
-  card: '#222222',
-  border: '#333333',
-  primary: '#10b981',    // Green
-  secondary: '#3b82f6',  // Blue
-  accent: '#f59e0b',     // Orange
-  danger: '#ef4444',     // Red
+  bg: '#0a0a0f',
+  surface: '#12121a',
+  card: '#1a1a24',
+  border: '#2a2a3a',
+  primary: '#00E5FF',    // Cyan/Electric blue
+  secondary: '#FF148A',  // Hot pink/Magenta
+  accent: '#FFC800',     // Golden yellow
+  danger: '#ff4466',     // Red
   text: '#ffffff',
-  textSecondary: '#a1a1a1',
-  textMuted: '#666666',
+  textSecondary: '#b0b0c0',
+  textMuted: '#606070',
+  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
+  gradientAccent: 'linear-gradient(135deg, #FF148A 0%, #FFC800 100%)',
+  shadow: '0 4px 20px rgba(0, 229, 255, 0.15)',
+  shadowDeep: '0 8px 40px rgba(255, 20, 138, 0.2)',
 };
 
 interface Props {
@@ -40,6 +47,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [isExporting, setIsExporting] = useState(false);
   const [currentOperation, setCurrentOperation] = useState<Operation | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportStartTime, setExportStartTime] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
   const [pendingCutStart, setPendingCutStart] = useState<number | null>(null);
@@ -60,9 +68,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   });
   const [dragStartTime, setDragStartTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
 
   // Crop configuration
-  const [showCrop, setShowCrop] = useState(false);
   const [cropConfig, setCropConfig] = useState<CropConfig>({
     enabled: false,
     preset: null,
@@ -74,13 +82,14 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [videoWidth, setVideoWidth] = useState(1920);
   const [videoHeight, setVideoHeight] = useState(1080);
 
-  // Blur configuration
-  const [showBlur, setShowBlur] = useState(false);
+  // Blur configuration (global settings)
   const [blurConfig, setBlurConfig] = useState<BlurConfig>({
     mode: 'off',
     autoIntensity: 25,
-    regions: [],
   });
+
+  // Per-clip blur zones (key: segment id)
+  const [clipBlurZones, setClipBlurZones] = useState<Record<string, ClipBlurZone>>({});
 
   // Export options
   const [exportSeparate, setExportSeparate] = useState(false); // false = merged, true = separate files
@@ -89,6 +98,12 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentPreviewSegmentIndex, setCurrentPreviewSegmentIndex] = useState(0);
 
+  // Effects preview (with crop/blur)
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+
   // Edit mode - when editing an existing clip
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
 
@@ -96,6 +111,40 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [draggedClipId, setDraggedClipId] = useState<string | null>(null);
   const [dragOverClipId, setDragOverClipId] = useState<string | null>(null);
   const [justDropped, setJustDropped] = useState(false);
+
+  // Toast notifications for user feedback
+  interface Toast {
+    id: string;
+    message: string;
+    type: 'success' | 'info' | 'warning' | 'error';
+    action?: { label: string; onClick: () => void };
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = useCallback((message: string, type: Toast['type'] = 'info', action?: Toast['action']) => {
+    const id = `toast-${Date.now()}`;
+    setToasts(prev => [...prev, { id, message, type, action }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // First time user hint
+  const [showFirstTimeHint, setShowFirstTimeHint] = useState(() => {
+    return !localStorage.getItem('losslesscut_seen_hint');
+  });
+
+  // Crop drag state
+  const [isDraggingCrop, setIsDraggingCrop] = useState(false);
+  const [cropDragStart, setCropDragStart] = useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+
+  // Rendered video dimensions (actual size on screen)
+  const [renderedVideo, setRenderedVideo] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   // Refs
   const isPlayingRef = useRef(false);
@@ -194,6 +243,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           e.preventDefault();
           // If editing a clip, update its end time
           if (editingClipIdRef.current) {
+            const clipName = segmentsRef.current.find(s => s.id === editingClipIdRef.current)?.name || 'Clip';
             const updated = segmentsRef.current.map(s =>
               s.id === editingClipIdRef.current ? { ...s, end: time } : s
             );
@@ -202,14 +252,18 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
             if (projectRef.current) {
               apiClient.updateProject(projectRef.current.id, { ...projectRef.current, segments: updated }).catch(console.error);
             }
+            // Toast for edit completion
+            setToasts(prev => [...prev, { id: `t-${Date.now()}`, message: `"${clipName}" actualizado`, type: 'success' }]);
+            setTimeout(() => setToasts(prev => prev.slice(1)), 3000);
           } else {
             // Create clip using video's current time and ref for pending start
             const end = time;
             const start = pendingCutStartRef.current ?? 0;
             if (Math.abs(end - start) >= 0.1) {
+              const clipName = `Clip ${segmentsRef.current.length + 1}`;
               const seg: Segment = {
                 id: `seg-${Date.now()}`,
-                name: `Clip ${segmentsRef.current.length + 1}`,
+                name: clipName,
                 start: Math.min(start, end),
                 end: Math.max(start, end),
                 selected: true,
@@ -219,6 +273,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
               if (projectRef.current) {
                 apiClient.updateProject(projectRef.current.id, { ...projectRef.current, segments: updated }).catch(console.error);
               }
+              // Toast for clip creation
+              setToasts(prev => [...prev, { id: `t-${Date.now()}`, message: `"${clipName}" creado`, type: 'success' }]);
+              setTimeout(() => setToasts(prev => prev.slice(1)), 3000);
             }
             setPendingCutStart(null);
           }
@@ -303,8 +360,14 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           setExportProgress(100);
           clearInterval(poll);
           setIsExporting(false);
+          setExportStartTime(null);
+          if (op.status === 'completed') {
+            showToast('¡Exportación completada!', 'success');
+          } else {
+            showToast('Error en la exportación', 'error');
+          }
         }
-      } catch { clearInterval(poll); setIsExporting(false); }
+      } catch { clearInterval(poll); setIsExporting(false); setExportStartTime(null); }
     }, 200); // Faster polling for smoother updates
 
     return () => clearInterval(poll);
@@ -335,16 +398,126 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     };
   }, [duration]);
 
+  // Calculate rendered video dimensions within container
+  useEffect(() => {
+    const updateRenderedDimensions = () => {
+      if (!videoRef.current || !videoContainerRef.current) return;
+
+      const container = videoContainerRef.current.getBoundingClientRect();
+      if (container.width === 0 || container.height === 0) return;
+
+      const videoAspect = videoWidth / videoHeight;
+      const containerAspect = container.width / container.height;
+
+      let renderedWidth, renderedHeight, offsetX, offsetY;
+
+      if (videoAspect > containerAspect) {
+        // Video is wider than container - letterbox top/bottom
+        renderedWidth = container.width;
+        renderedHeight = container.width / videoAspect;
+        offsetX = 0;
+        offsetY = (container.height - renderedHeight) / 2;
+      } else {
+        // Video is taller than container - letterbox left/right
+        renderedHeight = container.height;
+        renderedWidth = container.height * videoAspect;
+        offsetX = (container.width - renderedWidth) / 2;
+        offsetY = 0;
+      }
+
+      setRenderedVideo({
+        x: offsetX,
+        y: offsetY,
+        width: renderedWidth,
+        height: renderedHeight,
+      });
+    };
+
+    // Initial calculation
+    updateRenderedDimensions();
+
+    // Recalculate after sidebar animation (300ms transition)
+    const timeoutId = setTimeout(updateRenderedDimensions, 350);
+
+    window.addEventListener('resize', updateRenderedDimensions);
+    return () => {
+      window.removeEventListener('resize', updateRenderedDimensions);
+      clearTimeout(timeoutId);
+    };
+  }, [videoWidth, videoHeight, videoUrl, leftSidebarOpen, sidebarOpen, cropConfig.enabled]);
+
+  // Crop drag handlers
+  useEffect(() => {
+    if (!isDraggingCrop) return;
+
+    const handleCropDrag = (e: MouseEvent | TouchEvent) => {
+      if (!videoContainerRef.current || !cropConfig.enabled || renderedVideo.width === 0) return;
+
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - cropDragStart.x;
+      const deltaY = clientY - cropDragStart.y;
+
+      // Convert pixel delta to video coordinates using rendered video dimensions
+      const scaleX = videoWidth / renderedVideo.width;
+      const scaleY = videoHeight / renderedVideo.height;
+
+      const newX = Math.max(0, Math.min(videoWidth - cropConfig.width, cropDragStart.cropX + deltaX * scaleX));
+      const newY = Math.max(0, Math.min(videoHeight - cropConfig.height, cropDragStart.cropY + deltaY * scaleY));
+
+      setCropConfig(prev => ({
+        ...prev,
+        x: Math.round(newX),
+        y: Math.round(newY),
+      }));
+    };
+
+    const handleCropDragEnd = () => {
+      setIsDraggingCrop(false);
+    };
+
+    window.addEventListener('mousemove', handleCropDrag);
+    window.addEventListener('mouseup', handleCropDragEnd);
+    window.addEventListener('touchmove', handleCropDrag, { passive: false });
+    window.addEventListener('touchend', handleCropDragEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleCropDrag);
+      window.removeEventListener('mouseup', handleCropDragEnd);
+      window.removeEventListener('touchmove', handleCropDrag);
+      window.removeEventListener('touchend', handleCropDragEnd);
+    };
+  }, [isDraggingCrop, cropDragStart, cropConfig.enabled, cropConfig.width, cropConfig.height, videoWidth, videoHeight, renderedVideo.width, renderedVideo.height]);
+
+  // Crop drag start handler
+  const handleCropDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!cropConfig.enabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    setIsDraggingCrop(true);
+    setCropDragStart({
+      x: clientX,
+      y: clientY,
+      cropX: cropConfig.x,
+      cropY: cropConfig.y,
+    });
+  };
+
   // TikTok-style drag handlers
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingTimeline || !timelineRef.current || !duration) return;
-      
+
       const rect = timelineRef.current.getBoundingClientRect();
       const deltaX = e.clientX - dragStartX;
       const deltaPercent = deltaX / rect.width;
       const deltaTime = deltaPercent * duration;
-      
+
       const newTime = Math.max(0, Math.min(duration, dragStartTime + deltaTime));
       if (videoRef.current) videoRef.current.currentTime = newTime;
       setCurrentTime(newTime);
@@ -571,8 +744,22 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     if (!project || segments.length === 0) return;
     setIsExporting(true);
     setExportProgress(0);
+    setExportStartTime(Date.now());
     try {
       const selectedSegs = segments.filter(s => s.selected);
+
+      // Build per-clip blur settings - only include clips with blur enabled
+      const clipBlurSettings: Record<string, boolean> = {};
+      selectedSegs.forEach(seg => {
+        // Default to true (blur enabled) unless explicitly disabled
+        clipBlurSettings[seg.id] = clipBlurZones[seg.id]?.enabled !== false;
+      });
+
+      // Get confirmed face signatures for matching during blur
+      const confirmedSignatures = (blurConfig.confirmedFaces || [])
+        .filter(f => f.confirmed !== false)
+        .map(f => f.signature);
+
       const op = await apiClient.exportProject(project.id, {
         segment_ids: selectedSegs.map(s => s.id),
         merge_segments: !exportSeparate,
@@ -589,20 +776,106 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         // Blur settings
         blur_mode: blurConfig.mode,
         blur_auto_intensity: blurConfig.autoIntensity,
-        blur_regions: blurConfig.mode === 'manual' ? blurConfig.regions.map(r => ({
-          id: r.id,
-          x: Math.round((r.x / 100) * videoWidth),
-          y: Math.round((r.y / 100) * videoHeight),
-          width: Math.round((r.width / 100) * videoWidth),
-          height: Math.round((r.height / 100) * videoHeight),
-          start_time: r.startTime,
-          end_time: r.endTime,
-          blur_intensity: r.blurIntensity,
-        })) : undefined,
+        blur_confirmed_signatures: confirmedSignatures,
+        blur_per_clip: clipBlurSettings,
+        blur_style: blurConfig.blurStyle ? {
+          style: blurConfig.blurStyle.style,
+          intensity: blurConfig.blurStyle.intensity || blurConfig.autoIntensity,
+          color: blurConfig.blurStyle.color,
+          emoji: blurConfig.blurStyle.emoji,
+          imageData: blurConfig.blurStyle.imageData,
+        } : undefined,
       });
       setCurrentOperation(op);
-    } catch { setIsExporting(false); }
+    } catch { setIsExporting(false); setExportStartTime(null); }
   };
+
+  // Generate effects preview (crop/blur applied to a short clip)
+  const handleGeneratePreview = async () => {
+    if (!videoId) return;
+
+    // Need either crop or blur enabled
+    const hasEffects = cropConfig.enabled || blurConfig.mode === 'auto';
+    if (!hasEffects) {
+      showToast('Activa recorte o censura para generar preview', 'warning');
+      return;
+    }
+
+    setIsGeneratingPreview(true);
+    setPreviewProgress(0);
+    setPreviewVideoUrl(null);
+
+    try {
+      // Use current time or first selected segment
+      const selectedSegs = segments.filter(s => s.selected);
+      let previewStartTime = currentTime;
+      if (selectedSegs.length > 0) {
+        previewStartTime = selectedSegs[0].start;
+      }
+
+      const response = await fetch('/api/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_id: videoId,
+          start_time: previewStartTime,
+          duration: 5,
+          crop_enabled: cropConfig.enabled,
+          crop_x: cropConfig.x,
+          crop_y: cropConfig.y,
+          crop_width: cropConfig.width,
+          crop_height: cropConfig.height,
+          blur_mode: blurConfig.mode,
+          blur_intensity: blurConfig.autoIntensity,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to start preview');
+
+      const operation = await response.json();
+
+      // Poll for progress
+      const pollProgress = async () => {
+        try {
+          const statusRes = await fetch(`/api/operations/${operation.id}`);
+          const status = await statusRes.json();
+
+          setPreviewProgress(status.progress || 0);
+
+          if (status.status === 'completed' && status.output_files?.length > 0) {
+            const filename = status.output_files[0].split('/').pop();
+            setPreviewVideoUrl(`/api/outputs/${filename}`);
+            setShowPreviewModal(true);
+            setIsGeneratingPreview(false);
+            showToast('Preview generado correctamente', 'success');
+          } else if (status.status === 'failed') {
+            setIsGeneratingPreview(false);
+            showToast(`Error: ${status.error}`, 'error');
+          } else {
+            setTimeout(pollProgress, 500);
+          }
+        } catch {
+          setIsGeneratingPreview(false);
+        }
+      };
+
+      pollProgress();
+    } catch (e) {
+      setIsGeneratingPreview(false);
+      showToast('Error al generar preview', 'error');
+    }
+  };
+
+  // Calculate ETA for export
+  const getExportETA = useCallback(() => {
+    if (!exportStartTime || exportProgress <= 0) return null;
+    const elapsed = Date.now() - exportStartTime;
+    const estimatedTotal = elapsed / (exportProgress / 100);
+    const remaining = estimatedTotal - elapsed;
+    if (remaining < 1000) return 'menos de 1s';
+    if (remaining < 60000) return `${Math.ceil(remaining / 1000)}s`;
+    return `${Math.ceil(remaining / 60000)}min`;
+  }, [exportStartTime, exportProgress]);
 
   // Preview selected segments sequentially
   const startPreview = () => {
@@ -685,21 +958,71 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       a.href = result.url;
       a.download = result.filename;
       a.click();
+      showToast(`Captura guardada: ${result.filename}`, 'success');
     } catch (e) {
       console.error('Screenshot failed:', e);
+      showToast('Error al capturar imagen', 'error');
     } finally {
       setIsCapturingScreenshot(false);
     }
   };
 
   const deleteSegment = (id: string) => {
+    const segmentToDelete = segments.find(s => s.id === id);
+    const segmentIndex = segments.findIndex(s => s.id === id);
     const updated = segments.filter(s => s.id !== id);
     setSegments(updated);
     if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
+
+    // Show toast with undo option
+    if (segmentToDelete) {
+      showToast(`"${segmentToDelete.name}" eliminado`, 'success', {
+        label: 'Deshacer',
+        onClick: () => {
+          // Restore the segment at its original position
+          const restored = [...updated];
+          restored.splice(segmentIndex, 0, segmentToDelete);
+          setSegments(restored);
+          if (project) apiClient.updateProject(project.id, { ...project, segments: restored }).catch(console.error);
+          showToast('Clip restaurado', 'success');
+        }
+      });
+    }
   };
 
   const toggleSegment = (id: string) => {
     setSegments(segments.map(s => s.id === id ? { ...s, selected: !s.selected } : s));
+  };
+
+  // Toggle blur for a clip
+  const toggleClipBlur = (id: string) => {
+    setClipBlurZones(prev => {
+      const current = prev[id];
+      if (current?.enabled) {
+        // Disable blur
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      } else {
+        // Enable blur with default zone
+        return {
+          ...prev,
+          [id]: {
+            enabled: true,
+            x: 50,
+            y: 30,
+            radius: 20,
+          }
+        };
+      }
+    });
+  };
+
+  // Update blur zone position for a clip
+  const updateClipBlurZone = (id: string, updates: Partial<ClipBlurZone>) => {
+    setClipBlurZones(prev => ({
+      ...prev,
+      [id]: { ...prev[id], ...updates }
+    }));
   };
 
   const fmt = (s: number) => {
@@ -733,16 +1056,17 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     setCurrentTime(time);
   };
 
-  const segColors = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+  // Gemstone Inc color palette for segments
+  const segColors = ['#00E5FF', '#FF148A', '#FFC800', '#00FF88', '#AA66FF', '#FF6644'];
   const selectedCount = segments.filter(s => s.selected).length;
 
-  // Styles
+  // Styles - Gemstone Inc aesthetic (rounded, modern, with shadows)
   const btn = (bg: string, color: string = '#fff'): React.CSSProperties => ({
     background: bg,
     color,
     border: 'none',
-    borderRadius: '12px',
-    padding: isMobile ? '12px 16px' : '14px 24px',
+    borderRadius: '9999px', // Pill shape
+    padding: isMobile ? '12px 20px' : '14px 28px',
     fontSize: isMobile ? '14px' : '15px',
     fontWeight: '600',
     cursor: 'pointer',
@@ -750,21 +1074,45 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    transition: 'transform 0.1s, opacity 0.2s',
+    transition: 'all 0.2s ease',
     width: '100%',
+    boxShadow: `0 4px 15px ${bg}40`,
+    textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+  });
+
+  // Gradient button style
+  const btnGradient = (gradient: string, color: string = '#fff'): React.CSSProperties => ({
+    background: gradient,
+    color,
+    border: 'none',
+    borderRadius: '9999px',
+    padding: isMobile ? '12px 20px' : '14px 28px',
+    fontSize: isMobile ? '14px' : '15px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    transition: 'all 0.2s ease',
+    width: '100%',
+    boxShadow: '0 4px 20px rgba(0, 229, 255, 0.3)',
+    textShadow: '0 1px 2px rgba(0,0,0,0.2)',
   });
 
   const iconBtn: React.CSSProperties = {
-    background: colors.card,
+    background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
     color: colors.text,
     border: `1px solid ${colors.border}`,
-    borderRadius: '12px',
+    borderRadius: '14px',
     width: isMobile ? '44px' : '48px',
     height: isMobile ? '44px' : '48px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
   };
 
   return (
@@ -777,20 +1125,36 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
-      {/* Header */}
+      {/* Header - Gemstone Inc Style */}
       <header style={{
-        background: colors.surface,
+        background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
         padding: isMobile ? '12px 16px' : '16px 24px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         borderBottom: `1px solid ${colors.border}`,
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '24px' }}>✂️</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {/* Gemstone Inc Logo */}
+          <img
+            src={gemstonelogo}
+            alt="Gemstone Inc"
+            style={{
+              height: isMobile ? '36px' : '44px',
+              width: 'auto',
+              filter: 'drop-shadow(0 2px 8px rgba(0, 229, 255, 0.3))',
+            }}
+          />
           <div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? '16px' : '18px', color: colors.text, fontWeight: '600' }}>
-              Video Cutter
+            <h1 style={{
+              margin: 0,
+              fontSize: isMobile ? '14px' : '16px',
+              fontWeight: '600',
+              color: colors.textSecondary,
+              letterSpacing: '0.5px',
+            }}>
+              Video Studio
             </h1>
             {videoFile && (
               <p style={{ margin: 0, fontSize: '12px', color: colors.textMuted, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -800,38 +1164,91 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowHelp(true)} style={iconBtn} title="Ayuda">
+          <button onClick={() => setShowHelp(true)} style={{
+            ...iconBtn,
+            background: colors.card,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '50%',
+            transition: 'all 0.2s ease',
+          }} title="Ayuda">
             <IoMdHelpCircle size={20} />
           </button>
-          <button onClick={onClose} style={iconBtn}>
+          <button onClick={onClose} style={{
+            ...iconBtn,
+            background: colors.card,
+            border: `1px solid ${colors.border}`,
+            borderRadius: '50%',
+            transition: 'all 0.2s ease',
+          }}>
             <IoMdClose size={20} />
           </button>
         </div>
       </header>
 
-      {/* Help Modal */}
+      {/* Help Modal - Gemstone Style */}
       {showHelp && (
         <div style={{
-          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200,
+          position: 'absolute', inset: 0,
+          background: 'rgba(10, 10, 15, 0.92)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 200,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
         }} onClick={() => setShowHelp(false)}>
           <div style={{
-            background: colors.surface, borderRadius: '16px', padding: '24px', maxWidth: '400px', width: '100%',
+            background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+            borderRadius: '24px',
+            padding: '28px',
+            maxWidth: '420px',
+            width: '100%',
+            border: `1px solid ${colors.border}`,
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 229, 255, 0.1)',
           }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ color: colors.text, margin: '0 0 16px', fontSize: '20px' }}>Cómo usar</h2>
-            <div style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.8' }}>
-              <p><strong style={{ color: colors.primary }}>1.</strong> Sube un video</p>
-              <p><strong style={{ color: colors.primary }}>2.</strong> Navega al punto de inicio</p>
-              <p><strong style={{ color: colors.primary }}>3.</strong> Presiona <strong style={{ color: colors.accent }}>I</strong> (Marcar inicio)</p>
-              <p><strong style={{ color: colors.primary }}>4.</strong> Navega al punto final</p>
-              <p><strong style={{ color: colors.primary }}>5.</strong> Presiona <strong style={{ color: colors.secondary }}>O</strong> (Marcar fin)</p>
-              <p><strong style={{ color: colors.primary }}>6.</strong> Toca <strong>Exportar</strong> para guardar</p>
-              <hr style={{ border: 'none', borderTop: `1px solid ${colors.border}`, margin: '16px 0' }} />
-              <p style={{ fontSize: '13px', color: colors.textMuted }}>
-                <strong>Teclado:</strong> Espacio=Play, I/O=Cortar, ←→=1s, Shift+←→=0.1s
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div style={{
+                width: '36px', height: '36px',
+                background: colors.gradient,
+                borderRadius: '10px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <span style={{ fontSize: '18px' }}>◆</span>
+              </div>
+              <h2 style={{
+                margin: 0,
+                fontSize: '22px',
+                fontWeight: '700',
+                background: colors.gradient,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}>Cómo usar</h2>
+            </div>
+            <div style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '2' }}>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>1.</span> Sube un video</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>2.</span> Navega al punto de inicio</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>3.</span> Presiona <span style={{
+                background: colors.accent, color: '#000', padding: '2px 8px', borderRadius: '6px', fontWeight: '700'
+              }}>I</span> (Marcar inicio)</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>4.</span> Navega al punto final</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>5.</span> Presiona <span style={{
+                background: colors.secondary, color: '#fff', padding: '2px 8px', borderRadius: '6px', fontWeight: '700'
+              }}>O</span> (Marcar fin)</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>6.</span> Toca <strong>Exportar</strong> para guardar</p>
+            </div>
+            <div style={{
+              background: colors.surface,
+              borderRadius: '12px',
+              padding: '12px 16px',
+              marginTop: '16px',
+              border: `1px solid ${colors.border}`,
+            }}>
+              <p style={{ fontSize: '13px', color: colors.textMuted, margin: 0 }}>
+                <strong style={{ color: colors.primary }}>Atajos:</strong> Espacio=Play, I/O=Cortar, ←→=1s, Shift+←→=0.1s
               </p>
             </div>
-            <button onClick={() => setShowHelp(false)} style={{ ...btn(colors.primary), marginTop: '16px' }}>
+            <button onClick={() => setShowHelp(false)} style={{
+              ...btnGradient(colors.gradient),
+              marginTop: '20px',
+            }}>
               ¡Entendido!
             </button>
           </div>
@@ -841,43 +1258,207 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!videoUrl ? (
-          // Upload
+          // Upload - Gemstone Inc Style
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            padding: '32px', gap: '24px',
+            padding: '32px', gap: '28px',
+            background: `radial-gradient(circle at 50% 30%, ${colors.surface} 0%, ${colors.bg} 70%)`,
           }}>
+            {/* Gemstone Inc Logo */}
             <div style={{
-              width: '100px', height: '100px', borderRadius: '24px',
-              background: colors.surface, border: `2px dashed ${colors.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '20px',
+              borderRadius: '24px',
+              background: `linear-gradient(145deg, rgba(26, 26, 36, 0.8) 0%, rgba(18, 18, 26, 0.9) 100%)`,
+              boxShadow: '0 8px 40px rgba(0, 229, 255, 0.2), 0 0 60px rgba(255, 20, 138, 0.15)',
+              border: `1px solid ${colors.border}`,
             }}>
-              <FiUpload size={40} color={colors.primary} />
+              <img
+                src={gemstonelogo}
+                alt="Gemstone Inc"
+                style={{
+                  height: '80px',
+                  width: 'auto',
+                  filter: 'drop-shadow(0 4px 12px rgba(0, 229, 255, 0.4))',
+                }}
+              />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <h2 style={{ color: colors.text, margin: '0 0 8px', fontSize: '24px' }}>Subir Video</h2>
-              <p style={{ color: colors.textMuted, margin: 0 }}>Selecciona un video para comenzar</p>
+              <h2 style={{
+                margin: '0 0 8px',
+                fontSize: '24px',
+                fontWeight: '600',
+                color: colors.text,
+              }}>Video Studio</h2>
+              <p style={{ color: colors.textSecondary, margin: 0, fontSize: '15px' }}>
+                Edita, recorta y censura videos fácilmente
+              </p>
             </div>
-            <label style={{ ...btn(colors.primary), maxWidth: '280px', cursor: 'pointer' }}>
-              <FiUpload size={20} /> Elegir Video
+            <label style={{
+              ...btnGradient(colors.gradient),
+              maxWidth: '300px',
+              cursor: 'pointer',
+              padding: '16px 32px',
+              fontSize: '16px',
+            }}>
+              <FiUpload size={22} /> Subir Video
               <input type="file" accept="video/*,audio/*" onChange={handleUpload} style={{ display: 'none' }} />
             </label>
+            <p style={{ color: colors.textMuted, fontSize: '13px', marginTop: '-8px' }}>
+              MP4, MOV, MKV, WebM y más formatos
+            </p>
           </div>
         ) : (
           <>
-            {/* Video Container with Sidebar */}
+            {/* Video Container with Both Sidebars */}
             <div style={{
               flex: 1, display: 'flex', position: 'relative', minHeight: '200px',
             }}>
-              {/* Video Area */}
+              {/* LEFT SIDEBAR - Tools */}
               <div style={{
-                flex: 1, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'absolute', top: 0, left: 0, bottom: 0,
+                width: leftSidebarOpen ? (isMobile ? '280px' : '320px') : '50px',
+                background: leftSidebarOpen
+                  ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
+                  : 'rgba(18, 18, 26, 0.9)',
+                backdropFilter: 'blur(16px)',
+                borderRight: `1px solid ${colors.border}`,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex', flexDirection: 'column',
+                zIndex: 20,
+                boxShadow: leftSidebarOpen ? '8px 0 30px rgba(0, 0, 0, 0.3)' : 'none',
+              }}>
+                {/* Left Sidebar Toggle */}
+                <button
+                  onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                  style={{
+                    background: colors.gradientAccent,
+                    border: 'none',
+                    color: '#fff',
+                    padding: '12px 16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: leftSidebarOpen ? 'space-between' : 'center',
+                    gap: '8px',
+                    borderBottom: `1px solid rgba(255,255,255,0.1)`,
+                    boxShadow: '0 4px 15px rgba(255, 20, 138, 0.2)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {leftSidebarOpen ? (
+                    <>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700', fontSize: '14px' }}>
+                        <span style={{ fontSize: '16px' }}>🎬</span>
+                        Herramientas
+                      </span>
+                      <FiChevronLeft size={20} />
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '18px' }}>🎬</span>
+                    </div>
+                  )}
+                </button>
+
+                {/* Left Sidebar Content */}
+                {leftSidebarOpen && (
+                  <div style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '12px',
+                  }}>
+                    {/* Crop Section */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <CropSelector
+                        config={cropConfig}
+                        onChange={setCropConfig}
+                        videoWidth={videoWidth}
+                        videoHeight={videoHeight}
+                        onClose={() => setCropConfig({ ...cropConfig, enabled: false })}
+                      />
+                    </div>
+
+                    {/* Blur Section */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <BlurRegionSelector
+                        config={blurConfig}
+                        onChange={setBlurConfig}
+                        onClose={() => setBlurConfig({ ...blurConfig, mode: 'off', confirmedFaces: [] })}
+                        videoId={videoId}
+                        activeClipsWithBlur={Object.values(clipBlurZones).filter(z => z.enabled).length}
+                        totalClips={segments.length}
+                      />
+                    </div>
+
+                    {/* Quick stats */}
+                    {(cropConfig.enabled || blurConfig.mode === 'auto') && (
+                      <div style={{
+                        background: colors.card,
+                        borderRadius: '10px',
+                        padding: '12px',
+                        border: `1px solid ${colors.border}`,
+                      }}>
+                        <div style={{ fontSize: '11px', color: colors.textMuted, marginBottom: '8px', textTransform: 'uppercase' }}>
+                          Efectos activos
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {cropConfig.enabled && (
+                            <span style={{
+                              background: colors.primary,
+                              color: '#000',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}>
+                              <FiCrop size={12} /> {cropConfig.preset?.toUpperCase() || 'CROP'}
+                            </span>
+                          )}
+                          {blurConfig.mode === 'auto' && (
+                            <span style={{
+                              background: colors.secondary,
+                              color: '#fff',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}>
+                              <MdBlurOn size={12} /> CENSURA
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Video Area */}
+              <div
+                ref={videoContainerRef}
+                style={{
+                flex: 1,
+                background: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 position: 'relative',
+                overflow: 'hidden',
+                marginLeft: leftSidebarOpen ? (isMobile ? '280px' : '320px') : '50px',
+                marginRight: sidebarOpen ? (isMobile ? '300px' : '360px') : '50px',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}>
                 <video
                   ref={videoRef}
                   src={videoUrl}
                   playsInline
-                  style={{ maxWidth: '100%', maxHeight: '100%' }}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                   onLoadedMetadata={() => {
                     if (videoRef.current) {
                       setDuration(videoRef.current.duration);
@@ -992,10 +1573,13 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 )}
 
                 {/* Crop Overlay */}
-                {cropConfig.enabled && videoRef.current && (
+                {cropConfig.enabled && videoRef.current && renderedVideo.width > 0 && (
                   <div style={{
                     position: 'absolute',
-                    inset: 0,
+                    left: `${renderedVideo.x}px`,
+                    top: `${renderedVideo.y}px`,
+                    width: `${renderedVideo.width}px`,
+                    height: `${renderedVideo.height}px`,
                     pointerEvents: 'none',
                     overflow: 'hidden',
                   }}>
@@ -1013,16 +1597,23 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                         ${(cropConfig.x / videoWidth) * 100}% ${(cropConfig.y / videoHeight) * 100}%
                       )`,
                     }} />
-                    {/* Crop border */}
-                    <div style={{
-                      position: 'absolute',
-                      left: `${(cropConfig.x / videoWidth) * 100}%`,
-                      top: `${(cropConfig.y / videoHeight) * 100}%`,
-                      width: `${(cropConfig.width / videoWidth) * 100}%`,
-                      height: `${(cropConfig.height / videoHeight) * 100}%`,
-                      border: '2px dashed #10b981',
-                      boxSizing: 'border-box',
-                    }}>
+                    {/* Crop border - draggable */}
+                    <div
+                      onMouseDown={handleCropDragStart}
+                      onTouchStart={handleCropDragStart}
+                      style={{
+                        position: 'absolute',
+                        left: `${(cropConfig.x / videoWidth) * 100}%`,
+                        top: `${(cropConfig.y / videoHeight) * 100}%`,
+                        width: `${(cropConfig.width / videoWidth) * 100}%`,
+                        height: `${(cropConfig.height / videoHeight) * 100}%`,
+                        border: `3px ${isDraggingCrop ? 'solid' : 'dashed'} #10b981`,
+                        boxSizing: 'border-box',
+                        cursor: isDraggingCrop ? 'grabbing' : 'grab',
+                        pointerEvents: 'auto',
+                        transition: isDraggingCrop ? 'none' : 'border 0.2s ease',
+                      }}
+                    >
                       {/* Corner indicators */}
                       {[['0', '0'], ['100%', '0'], ['0', '100%'], ['100%', '100%']].map(([x, y], i) => (
                         <div key={i} style={{
@@ -1030,131 +1621,200 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                           left: x,
                           top: y,
                           transform: 'translate(-50%, -50%)',
-                          width: '12px',
-                          height: '12px',
+                          width: '14px',
+                          height: '14px',
                           background: '#10b981',
                           borderRadius: '50%',
+                          border: '2px solid #fff',
+                          pointerEvents: 'none',
                         }} />
                       ))}
+                      {/* Center move indicator */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        background: 'rgba(16, 185, 129, 0.8)',
+                        borderRadius: '8px',
+                        padding: '8px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        pointerEvents: 'none',
+                      }}>
+                        <FiMove size={16} color="#fff" />
+                        <span style={{ color: '#fff', fontSize: '11px', fontWeight: '600' }}>ARRASTRAR</span>
+                      </div>
                       {/* Aspect ratio label */}
                       <div style={{
                         position: 'absolute',
                         top: '8px',
                         left: '8px',
-                        background: 'rgba(16, 185, 129, 0.9)',
+                        background: 'rgba(16, 185, 129, 0.95)',
                         color: '#fff',
-                        padding: '2px 8px',
+                        padding: '4px 10px',
                         borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '600',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        pointerEvents: 'none',
                       }}>
                         {cropConfig.preset?.toUpperCase() || 'CROP'}
+                      </div>
+                      {/* Size label */}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        right: '8px',
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        color: '#fff',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontFamily: 'monospace',
+                        pointerEvents: 'none',
+                      }}>
+                        {cropConfig.width} × {cropConfig.height}
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Blur Regions Overlay */}
-                {blurConfig.mode === 'manual' && blurConfig.regions.length > 0 && (
+                {/* Auto blur indicator - just show badge when enabled */}
+                {blurConfig.mode === 'auto' && (
                   <div style={{
                     position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    overflow: 'hidden',
+                    top: '10px',
+                    left: '10px',
+                    background: 'rgba(255, 20, 138, 0.9)',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    zIndex: 25,
                   }}>
-                    {blurConfig.regions.map((region) => {
-                      const isActive = currentTime >= region.startTime && currentTime <= region.endTime;
-                      return (
-                        <div
-                          key={region.id}
-                          style={{
-                            position: 'absolute',
-                            left: `${region.x}%`,
-                            top: `${region.y}%`,
-                            width: `${region.width}%`,
-                            height: `${region.height}%`,
-                            border: `2px ${isActive ? 'solid' : 'dashed'} ${isActive ? '#8b5cf6' : 'rgba(139, 92, 246, 0.5)'}`,
-                            background: isActive ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.1)',
-                            boxSizing: 'border-box',
-                            borderRadius: '4px',
-                            transition: 'all 0.2s ease',
-                          }}
-                        >
-                          <div style={{
-                            position: 'absolute',
-                            top: '-20px',
-                            left: '4px',
-                            background: isActive ? '#8b5cf6' : 'rgba(139, 92, 246, 0.7)',
-                            color: '#fff',
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            fontSize: '9px',
-                            fontWeight: '600',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            BLUR {isActive ? '(ACTIVO)' : ''}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <MdBlurOn size={16} />
+                    Censura Auto Activa
                   </div>
                 )}
               </div>
 
-              {/* Clips Sidebar - Floating on right */}
+              {/* Clips Sidebar - Gemstone Style - Wider for better UX */}
               <div style={{
                 position: 'absolute', top: 0, right: 0, bottom: 0,
-                width: sidebarOpen ? (isMobile ? '280px' : '300px') : '48px',
-                background: sidebarOpen ? 'rgba(15, 15, 15, 0.95)' : 'rgba(15, 15, 15, 0.8)',
-                backdropFilter: 'blur(10px)',
+                width: sidebarOpen ? (isMobile ? '300px' : '360px') : '50px',
+                background: sidebarOpen
+                  ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
+                  : 'rgba(18, 18, 26, 0.9)',
+                backdropFilter: 'blur(16px)',
                 borderLeft: `1px solid ${colors.border}`,
-                transition: 'width 0.3s ease, background 0.3s ease',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex', flexDirection: 'column',
                 zIndex: 20,
+                boxShadow: sidebarOpen ? '-8px 0 30px rgba(0, 0, 0, 0.3)' : 'none',
               }}>
-                {/* Sidebar Toggle */}
+                {/* Sidebar Toggle - Gradient Header */}
                 <button
                   onClick={() => setSidebarOpen(!sidebarOpen)}
                   style={{
-                    background: colors.primary,
+                    background: colors.gradient,
                     border: 'none',
                     color: '#fff',
-                    padding: '12px',
+                    padding: '12px 16px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: sidebarOpen ? 'space-between' : 'center',
                     gap: '8px',
-                    borderBottom: `1px solid ${colors.border}`,
+                    borderBottom: `1px solid rgba(255,255,255,0.1)`,
+                    boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)',
+                    flexShrink: 0,
                   }}
                 >
                   {sidebarOpen ? (
                     <>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}>
-                        <MdPlaylistPlay size={20} />
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700', fontSize: '14px' }}>
+                        <span style={{ fontSize: '16px' }}>◆</span>
                         Tus Clips ({segments.length})
                       </span>
                       <FiChevronRight size={20} />
                     </>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                      <MdPlaylistPlay size={20} />
-                      <span style={{ fontSize: '10px', fontWeight: '600' }}>{segments.length}</span>
+                      <span style={{ fontSize: '18px' }}>◆</span>
+                      <span style={{ fontSize: '11px', fontWeight: '700' }}>{segments.length}</span>
                     </div>
                   )}
                 </button>
 
-                {/* Clips List */}
+                {/* Clips List - Fixed height with scroll */}
                 {sidebarOpen && (
-                  <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                  <div style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '10px',
+                    minHeight: '150px',
+                  }}>
                     {segments.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '20px', color: colors.textMuted }}>
-                        <FiScissors size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
-                        <p style={{ margin: '0 0 8px', fontSize: '14px' }}>No clips yet</p>
-                        <p style={{ margin: 0, fontSize: '12px' }}>
-                          Press <strong style={{ color: colors.accent }}>I</strong> to mark start<br/>
-                          Press <strong style={{ color: colors.secondary }}>O</strong> to mark end
-                        </p>
+                        <div style={{
+                          width: '60px',
+                          height: '60px',
+                          borderRadius: '16px',
+                          background: colors.card,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          margin: '0 auto 16px',
+                        }}>
+                          <FiScissors size={28} style={{ opacity: 0.5 }} />
+                        </div>
+                        <p style={{ margin: '0 0 12px', fontSize: '14px', color: colors.text }}>Aún no hay clips</p>
+                        <div style={{
+                          background: colors.card,
+                          borderRadius: '10px',
+                          padding: '14px',
+                          textAlign: 'left',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                            <span style={{
+                              background: colors.accent,
+                              color: '#000',
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '6px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: '700',
+                              fontSize: '12px',
+                            }}>I</span>
+                            <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
+                              Marca el <strong style={{ color: colors.accent }}>inicio</strong>
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{
+                              background: colors.secondary,
+                              color: '#fff',
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '6px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: '700',
+                              fontSize: '12px',
+                            }}>O</span>
+                            <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
+                              Marca el <strong style={{ color: colors.secondary }}>fin</strong> y crea el clip
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1216,14 +1876,17 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                                 <div
                                   onClick={(e) => { e.stopPropagation(); toggleSegment(seg.id); }}
                                   style={{
-                                    width: '22px', height: '22px', borderRadius: '6px',
-                                    background: seg.selected ? colors.primary : 'transparent',
+                                    width: '28px', height: '28px', borderRadius: '8px',
+                                    background: seg.selected ? colors.primary : colors.card,
                                     border: `2px solid ${seg.selected ? colors.primary : colors.border}`,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     cursor: 'pointer', flexShrink: 0,
+                                    transition: 'all 0.15s ease',
+                                    boxShadow: seg.selected ? '0 0 0 3px rgba(16, 185, 129, 0.2)' : 'none',
                                   }}
+                                  title={seg.selected ? 'Deseleccionar' : 'Seleccionar para exportar'}
                                 >
-                                  {seg.selected && <IoMdCheckmark size={14} color="#fff" />}
+                                  {seg.selected && <IoMdCheckmark size={16} color="#fff" />}
                                 </div>
                                 <div style={{
                                   width: '4px', height: '20px',
@@ -1233,6 +1896,33 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                                 <span style={{ color: colors.text, fontSize: '14px', fontWeight: '600', flex: 1 }}>
                                   {seg.name}
                                 </span>
+                                {/* Blur toggle per clip */}
+                                {blurConfig.mode === 'auto' && (blurConfig.confirmedFaces?.length || 0) > 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const currentZone = clipBlurZones[seg.id] || { enabled: true, x: 0, y: 0, radius: 0 };
+                                      setClipBlurZones({
+                                        ...clipBlurZones,
+                                        [seg.id]: { ...currentZone, enabled: !currentZone.enabled }
+                                      });
+                                    }}
+                                    style={{
+                                      background: (clipBlurZones[seg.id]?.enabled !== false) ? 'rgba(255, 200, 0, 0.2)' : 'transparent',
+                                      border: `1px solid ${(clipBlurZones[seg.id]?.enabled !== false) ? colors.accent : colors.border}`,
+                                      color: (clipBlurZones[seg.id]?.enabled !== false) ? colors.accent : colors.textMuted,
+                                      cursor: 'pointer',
+                                      padding: '4px',
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                    }}
+                                    title={(clipBlurZones[seg.id]?.enabled !== false) ? "Censura activa en este clip" : "Censura desactivada en este clip"}
+                                  >
+                                    <MdBlurOn size={14} />
+                                  </button>
+                                )}
                                 {/* Edit button */}
                                 <button
                                   onClick={(e) => {
@@ -1293,14 +1983,14 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   </div>
                 )}
 
-                {/* Export Section in Sidebar */}
+                {/* Export Section - Compact Gemstone Style */}
                 {sidebarOpen && segments.length > 0 && (
                   <div style={{
                     borderTop: `1px solid ${colors.border}`,
-                    padding: '12px',
-                    background: 'rgba(0,0,0,0.3)',
+                    padding: '10px',
+                    background: `linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.4) 100%)`,
                   }}>
-                    {/* Total duration of selected clips */}
+                    {/* Compact header with duration and clip count */}
                     {(() => {
                       const selectedSegs = segments.filter(s => s.selected);
                       const totalSeconds = selectedSegs.reduce((acc, seg) => {
@@ -1309,115 +1999,181 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       }, 0);
                       const mins = Math.floor(totalSeconds / 60);
                       const secs = Math.floor(totalSeconds % 60);
-                      const ms = Math.floor((totalSeconds % 1) * 10);
                       return (
                         <div style={{
-                          background: colors.card,
-                          borderRadius: '8px',
-                          padding: '10px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
                           marginBottom: '10px',
-                          textAlign: 'center',
+                          padding: '8px 12px',
+                          background: colors.card,
+                          borderRadius: '10px',
+                          border: `1px solid ${colors.border}`,
                         }}>
-                          <div style={{ fontSize: '10px', color: colors.textMuted, marginBottom: '4px' }}>
-                            DURACIÓN TOTAL
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: colors.textMuted, fontSize: '11px' }}>{selectedCount}/{segments.length}</span>
+                            <span style={{ color: colors.textMuted }}>·</span>
+                            <span style={{
+                              color: colors.primary,
+                              fontSize: '14px',
+                              fontWeight: '700',
+                              fontFamily: 'monospace',
+                            }}>
+                              {mins}:{secs.toString().padStart(2, '0')}
+                            </span>
                           </div>
-                          <div style={{
-                            fontSize: '20px',
-                            fontWeight: '700',
-                            color: colors.primary,
-                            fontFamily: 'monospace',
-                          }}>
-                            {mins}:{secs.toString().padStart(2, '0')}.{ms}
-                          </div>
-                          <div style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px' }}>
-                            {selectedSegs.length} clip{selectedSegs.length !== 1 ? 's' : ''} · {totalSeconds.toFixed(1)}s
+                          {/* Format toggle - compact */}
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              onClick={() => setExportSeparate(false)}
+                              style={{
+                                background: !exportSeparate ? colors.primary : 'transparent',
+                                color: !exportSeparate ? '#000' : colors.textMuted,
+                                border: !exportSeparate ? 'none' : `1px solid ${colors.border}`,
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                              }}
+                              title="Un archivo"
+                            >
+                              ◆ 1
+                            </button>
+                            <button
+                              onClick={() => setExportSeparate(true)}
+                              style={{
+                                background: exportSeparate ? colors.secondary : 'transparent',
+                                color: exportSeparate ? '#fff' : colors.textMuted,
+                                border: exportSeparate ? 'none' : `1px solid ${colors.border}`,
+                                borderRadius: '6px',
+                                padding: '4px 10px',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                              }}
+                              title="Archivos separados"
+                            >
+                              ◇ {selectedCount}
+                            </button>
                           </div>
                         </div>
                       );
                     })()}
 
-                    <div style={{
-                      fontSize: '11px', color: colors.textMuted,
-                      marginBottom: '8px', textAlign: 'center',
-                    }}>
-                      {selectedCount} de {segments.length} clips seleccionados
-                    </div>
+                    {/* Active effects indicator */}
+                    {(cropConfig.enabled || blurConfig.mode === 'auto') && (
+                      <div style={{
+                        display: 'flex',
+                        gap: '6px',
+                        marginBottom: '10px',
+                        flexWrap: 'wrap',
+                      }}>
+                        {cropConfig.enabled && (
+                          <span style={{
+                            background: colors.primary,
+                            color: '#000',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}>
+                            <FiCrop size={11} /> {cropConfig.preset?.toUpperCase() || 'CROP'}
+                          </span>
+                        )}
+                        {blurConfig.mode === 'auto' && (
+                          <span style={{
+                            background: colors.secondary,
+                            color: '#fff',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}>
+                            <MdBlurOn size={11} /> AUTO
+                          </span>
+                        )}
+                      </div>
+                    )}
 
-                    {/* Preview Button */}
+                    {/* Preview clips button */}
                     <button
                       onClick={isPreviewMode ? stopPreview : startPreview}
                       disabled={selectedCount === 0}
                       style={{
                         width: '100%',
-                        marginBottom: '8px',
+                        marginBottom: '10px',
                         background: isPreviewMode ? colors.danger : colors.accent,
                         color: isPreviewMode ? '#fff' : '#000',
                         border: 'none',
-                        borderRadius: '10px',
-                        padding: '10px',
+                        borderRadius: '8px',
+                        padding: '10px 14px',
                         fontSize: '13px',
-                        fontWeight: '600',
+                        fontWeight: '700',
                         cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
                         opacity: selectedCount === 0 ? 0.5 : 1,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '8px',
+                        gap: '6px',
                       }}
                     >
-                      {isPreviewMode ? (
-                        <>
-                          <IoMdPause size={16} />
-                          Detener
-                        </>
-                      ) : (
-                        <>
-                          <IoMdPlay size={16} />
-                          Ver Clips
-                        </>
-                      )}
+                      {isPreviewMode ? <><IoMdPause size={16} /> Detener Preview</> : <><IoMdPlay size={16} /> Ver Clips</>}
                     </button>
 
-                    {/* Export Mode Toggle */}
+                    {/* Export format selector */}
                     <div style={{
                       display: 'flex',
-                      gap: '4px',
-                      marginBottom: '8px',
-                      background: colors.card,
-                      borderRadius: '8px',
-                      padding: '4px',
+                      gap: '6px',
+                      marginBottom: '10px',
                     }}>
                       <button
                         onClick={() => setExportSeparate(false)}
                         style={{
                           flex: 1,
-                          background: !exportSeparate ? colors.primary : 'transparent',
-                          color: !exportSeparate ? '#fff' : colors.textMuted,
-                          border: 'none',
-                          borderRadius: '6px',
-                          padding: '8px 4px',
-                          fontSize: '11px',
-                          fontWeight: '600',
+                          background: !exportSeparate ? colors.primary : colors.card,
+                          color: !exportSeparate ? '#000' : colors.text,
+                          border: !exportSeparate ? 'none' : `1px solid ${colors.border}`,
+                          borderRadius: '8px',
+                          padding: '10px',
                           cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '2px',
                         }}
                       >
-                        Combinado
+                        <span style={{ fontSize: '16px' }}>◆</span>
+                        <span>Combinado</span>
                       </button>
                       <button
                         onClick={() => setExportSeparate(true)}
                         style={{
                           flex: 1,
-                          background: exportSeparate ? colors.secondary : 'transparent',
-                          color: exportSeparate ? '#fff' : colors.textMuted,
-                          border: 'none',
-                          borderRadius: '6px',
-                          padding: '8px 4px',
-                          fontSize: '11px',
-                          fontWeight: '600',
+                          background: exportSeparate ? colors.secondary : colors.card,
+                          color: exportSeparate ? '#fff' : colors.text,
+                          border: exportSeparate ? 'none' : `1px solid ${colors.border}`,
+                          borderRadius: '8px',
+                          padding: '10px',
                           cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '2px',
                         }}
                       >
-                        Separados
+                        <span style={{ fontSize: '16px' }}>◇◇</span>
+                        <span>{selectedCount} Archivos</span>
                       </button>
                     </div>
 
@@ -1471,33 +2227,73 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                           color: colors.textMuted,
                         }}>
                           <span>Procesando video...</span>
-                          <span>{Math.round(exportProgress)}% completado</span>
+                          <span>
+                            {Math.round(exportProgress)}% completado
+                            {getExportETA() && ` • ~${getExportETA()} restante`}
+                          </span>
                         </div>
                       </div>
                     ) : (
-                      <button
-                        onClick={handleExport}
-                        disabled={selectedCount === 0}
-                        style={{
-                          width: '100%',
-                          background: colors.primary,
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '10px',
-                          padding: '14px',
-                          fontSize: '14px',
-                          fontWeight: '600',
-                          cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
-                          opacity: selectedCount === 0 ? 0.5 : 1,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                        }}
-                      >
-                        <IoMdDownload size={18} />
-                        Exportar {exportSeparate ? `${selectedCount} Archivos` : 'Combinado'}
-                      </button>
+                      <>
+                        {/* Preview with Effects Button - compact */}
+                        {(cropConfig.enabled || blurConfig.mode === 'auto') && (
+                          <button
+                            onClick={handleGeneratePreview}
+                            disabled={isGeneratingPreview}
+                            style={{
+                              width: '100%',
+                              marginBottom: '6px',
+                              background: isGeneratingPreview ? colors.card : 'rgba(139, 92, 246, 0.2)',
+                              color: isGeneratingPreview ? colors.textMuted : '#8b5cf6',
+                              border: `1px solid ${isGeneratingPreview ? colors.border : '#8b5cf6'}`,
+                              borderRadius: '6px',
+                              padding: '6px 10px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              cursor: isGeneratingPreview ? 'wait' : 'pointer',
+                              opacity: isGeneratingPreview ? 0.8 : 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            {isGeneratingPreview ? (
+                              <>⏳ {previewProgress.toFixed(0)}%</>
+                            ) : (
+                              <><IoMdPlay size={12} /> Preview Efectos</>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Export Button - Gemstone Gradient */}
+                        <button
+                          onClick={handleExport}
+                          disabled={selectedCount === 0}
+                          style={{
+                            width: '100%',
+                            background: colors.gradient,
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '14px 18px',
+                            fontSize: '15px',
+                            fontWeight: '700',
+                            cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
+                            opacity: selectedCount === 0 ? 0.5 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            boxShadow: '0 6px 20px rgba(0, 229, 255, 0.35), 0 0 30px rgba(255, 20, 138, 0.15)',
+                            transition: 'all 0.2s ease',
+                            textShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          <span style={{ fontSize: '18px' }}>{exportSeparate ? '◇' : '◆'}</span>
+                          Exportar {exportSeparate ? `${selectedCount} Videos` : 'Combinado'}
+                        </button>
+                      </>
                     )}
                     {currentOperation?.status === 'completed' && (
                       <button
@@ -1505,22 +2301,24 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                         style={{
                           width: '100%',
                           marginTop: '8px',
-                          background: colors.secondary,
+                          background: colors.gradientAccent,
                           color: '#fff',
                           border: 'none',
                           borderRadius: '10px',
-                          padding: '12px',
+                          padding: '12px 16px',
                           fontSize: '13px',
-                          fontWeight: '600',
+                          fontWeight: '700',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '8px',
+                          gap: '6px',
+                          boxShadow: '0 4px 15px rgba(255, 20, 138, 0.25)',
+                          animation: 'pulse 2s infinite',
                         }}
                       >
                         <IoMdDownload size={16} />
-                        ¡Descargar!
+                        Descargar
                       </button>
                     )}
                   </div>
@@ -1634,47 +2432,104 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 {/* Divider */}
                 <div style={{ width: '1px', height: '32px', background: colors.border, margin: '0 8px' }} />
 
-                {/* I - Set In Point */}
+                {/* I - Set In Point - Gemstone Style */}
                 <button
                   onClick={handleMarkStart}
                   style={{
                     ...iconBtn,
                     width: 'auto',
-                    minWidth: isMobile ? '70px' : '90px',
-                    height: isMobile ? '44px' : '48px',
-                    padding: '0 16px',
-                    background: pendingCutStart !== null ? colors.accent : colors.card,
+                    minWidth: isMobile ? '85px' : '115px',
+                    height: isMobile ? '50px' : '56px',
+                    padding: '0 18px',
+                    borderRadius: '16px',
+                    background: pendingCutStart !== null
+                      ? `linear-gradient(135deg, ${colors.accent} 0%, #FF9500 100%)`
+                      : `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
                     color: pendingCutStart !== null ? '#000' : colors.text,
                     fontSize: '14px',
-                    fontWeight: '600',
-                    gap: '6px',
+                    fontWeight: '700',
+                    gap: '8px',
+                    boxShadow: pendingCutStart !== null
+                      ? '0 6px 20px rgba(255, 200, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.3)'
+                      : '0 2px 10px rgba(0,0,0,0.2)',
+                    transition: 'all 0.2s ease',
+                    border: pendingCutStart !== null ? 'none' : `1px solid ${colors.border}`,
                   }}
-                  title="Marcar punto de inicio (I)"
+                  title="Marcar punto de inicio (tecla I)"
                 >
-                  <span style={{ fontWeight: '800', fontSize: '16px' }}>I</span>
-                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Inicio</span>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '3px',
+                  }}>
+                    <span style={{
+                      fontWeight: '800',
+                      fontSize: '20px',
+                      background: pendingCutStart !== null ? 'rgba(0,0,0,0.15)' : colors.gradient,
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: pendingCutStart !== null ? '#000' : '#fff',
+                    }}>I</span>
+                    <span style={{ fontSize: '10px', fontWeight: '600' }}>
+                      {pendingCutStart !== null ? '✓ Listo' : 'Marcar IN'}
+                    </span>
+                  </div>
                 </button>
 
-                {/* O - Set Out Point */}
+                {/* O - Set Out Point - Gemstone Style */}
                 <button
                   onClick={handleMarkEnd}
+                  disabled={pendingCutStart === null && !editingClipId}
                   style={{
                     ...iconBtn,
                     width: 'auto',
-                    minWidth: isMobile ? '80px' : '100px',
-                    height: isMobile ? '44px' : '48px',
-                    padding: '0 16px',
-                    background: pendingCutStart !== null ? colors.secondary : colors.card,
+                    minWidth: isMobile ? '85px' : '115px',
+                    height: isMobile ? '50px' : '56px',
+                    padding: '0 18px',
+                    borderRadius: '16px',
+                    background: pendingCutStart !== null
+                      ? colors.gradientAccent
+                      : `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
                     border: pendingCutStart !== null ? 'none' : `1px solid ${colors.border}`,
                     color: pendingCutStart !== null ? '#fff' : colors.textMuted,
                     fontSize: '14px',
-                    fontWeight: '600',
-                    gap: '6px',
+                    fontWeight: '700',
+                    gap: '8px',
+                    boxShadow: pendingCutStart !== null
+                      ? '0 6px 20px rgba(255, 20, 138, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)'
+                      : '0 2px 10px rgba(0,0,0,0.2)',
+                    opacity: pendingCutStart === null && !editingClipId ? 0.5 : 1,
+                    cursor: pendingCutStart === null && !editingClipId ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s ease',
                   }}
-                  title="Marcar fin y crear clip (O)"
+                  title="Marcar fin y crear clip (tecla O)"
                 >
-                  <span style={{ fontWeight: '800', fontSize: '16px' }}>O</span>
-                  <span style={{ fontSize: isMobile ? '11px' : '12px' }}>Fin</span>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '3px',
+                  }}>
+                    <span style={{
+                      fontWeight: '800',
+                      fontSize: '20px',
+                      background: pendingCutStart !== null ? 'rgba(255,255,255,0.2)' : colors.border,
+                      width: '30px',
+                      height: '30px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>O</span>
+                    <span style={{ fontSize: '10px', fontWeight: '600' }}>
+                      {pendingCutStart !== null ? '+ Crear' : 'Marcar OUT'}
+                    </span>
+                  </div>
                 </button>
 
                 {/* Divider */}
@@ -1694,80 +2549,78 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 </button>
               </div>
 
-              {/* Quick Actions */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button onClick={() => { setShowCrop(!showCrop); setShowBlur(false); setShowIntroOutro(false); }} style={{
-                  ...btn(showCrop ? colors.primary : cropConfig.enabled ? 'rgba(16, 185, 129, 0.3)' : colors.card),
-                  color: showCrop ? '#fff' : cropConfig.enabled ? colors.primary : colors.text,
-                  border: cropConfig.enabled && !showCrop ? `1px solid ${colors.primary}` : undefined,
-                }}>
-                  <FiCrop size={18} /> {cropConfig.enabled ? cropConfig.preset?.toUpperCase() || 'Crop' : 'Recortar'}
+              {/* Quick Actions - Sidebar toggles */}
+              <div style={{
+                display: 'flex',
+                gap: isMobile ? '8px' : '10px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}>
+                {/* Toggle tools sidebar */}
+                <button
+                  onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                  style={{
+                    background: leftSidebarOpen ? colors.gradientAccent : colors.card,
+                    color: leftSidebarOpen ? '#fff' : colors.text,
+                    border: leftSidebarOpen ? 'none' : `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    padding: isMobile ? '10px 14px' : '12px 18px',
+                    fontSize: isMobile ? '12px' : '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '14px' }}>🎬</span>
+                  Herramientas
+                  {(cropConfig.enabled || blurConfig.mode === 'auto') && (
+                    <span style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                    }}>
+                      {(cropConfig.enabled ? 1 : 0) + (blurConfig.mode === 'auto' ? 1 : 0)}
+                    </span>
+                  )}
                 </button>
-                <button onClick={() => { setShowBlur(!showBlur); setShowCrop(false); setShowIntroOutro(false); }} style={{
-                  ...btn(showBlur ? '#8b5cf6' : blurConfig.mode !== 'off' ? 'rgba(139, 92, 246, 0.3)' : colors.card),
-                  color: showBlur ? '#fff' : blurConfig.mode !== 'off' ? '#8b5cf6' : colors.text,
-                  border: blurConfig.mode !== 'off' && !showBlur ? '1px solid #8b5cf6' : undefined,
-                }}>
-                  <MdBlurOn size={18} /> {blurConfig.mode === 'auto' ? 'Auto-Blur' : blurConfig.mode === 'manual' ? `Blur (${blurConfig.regions.length})` : 'Censurar'}
+                {/* Toggle clips sidebar */}
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  style={{
+                    background: sidebarOpen ? colors.primary : colors.card,
+                    color: sidebarOpen ? '#000' : colors.text,
+                    border: sidebarOpen ? 'none' : `1px solid ${colors.border}`,
+                    borderRadius: '10px',
+                    padding: isMobile ? '10px 14px' : '12px 18px',
+                    fontSize: isMobile ? '12px' : '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <MdPlaylistPlay size={16} />
+                  Clips
+                  {segments.length > 0 && (
+                    <span style={{
+                      background: sidebarOpen ? 'rgba(0,0,0,0.2)' : colors.primary,
+                      color: sidebarOpen ? '#000' : '#fff',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                    }}>
+                      {segments.length}
+                    </span>
+                  )}
                 </button>
-                <button onClick={() => { setShowIntroOutro(!showIntroOutro); setShowCrop(false); setShowBlur(false); }} style={{
-                  ...btn(showIntroOutro ? colors.accent : colors.card),
-                  color: showIntroOutro ? '#000' : colors.text,
-                }}>
-                  <IoMdImages size={18} /> {showIntroOutro ? 'Hide' : 'Intro/Outro'}
-                </button>
-                {!sidebarOpen && segments.length > 0 && (
-                  <button onClick={() => setSidebarOpen(true)} style={btn(colors.primary)}>
-                    <MdPlaylistPlay size={18} /> View {segments.length} Clips
-                  </button>
-                )}
               </div>
-
-              {/* Intro/Outro Settings */}
-              {showIntroOutro && (
-                <div style={{
-                  background: colors.surface, borderRadius: '10px', padding: '16px',
-                  marginTop: '16px', border: `1px solid ${colors.border}`
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h4 style={{ color: colors.text, margin: 0 }}>Intro/Outro Settings</h4>
-                    <button onClick={() => setShowIntroOutro(false)} style={{
-                      background: 'transparent', border: 'none', color: colors.textMuted,
-                      cursor: 'pointer', fontSize: '18px'
-                    }}>×</button>
-                  </div>
-                  <IntroOutroSelector
-                    config={introOutroConfig}
-                    onChange={setIntroOutroConfig}
-                  />
-                </div>
-              )}
-
-              {/* Crop Settings */}
-              {showCrop && (
-                <div style={{ marginTop: '16px' }}>
-                  <CropSelector
-                    config={cropConfig}
-                    onChange={setCropConfig}
-                    videoWidth={videoWidth}
-                    videoHeight={videoHeight}
-                    onClose={() => setShowCrop(false)}
-                  />
-                </div>
-              )}
-
-              {/* Blur Settings */}
-              {showBlur && (
-                <div style={{ marginTop: '16px' }}>
-                  <BlurRegionSelector
-                    config={blurConfig}
-                    onChange={setBlurConfig}
-                    currentTime={currentTime}
-                    duration={duration}
-                    onClose={() => setShowBlur(false)}
-                  />
-                </div>
-              )}
             </div>
 
             {/* Keyboard shortcuts hint */}
@@ -1784,6 +2637,351 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           </>
         )}
       </div>
+
+      {/* Toast Notifications */}
+      <div style={{
+        position: 'fixed',
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        zIndex: 1000,
+        pointerEvents: 'none',
+      }}>
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            style={{
+              background: toast.type === 'success' ? colors.primary
+                : toast.type === 'error' ? colors.danger
+                : toast.type === 'warning' ? colors.accent
+                : colors.secondary,
+              color: toast.type === 'warning' ? '#000' : '#fff',
+              padding: '12px 20px',
+              borderRadius: '10px',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              pointerEvents: 'auto',
+              animation: 'slideUp 0.3s ease',
+            }}
+          >
+            <span>{toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}</span>
+            <span>{toast.message}</span>
+            {toast.action && (
+              <button
+                onClick={toast.action.onClick}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: 'inherit',
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                }}
+              >
+                {toast.action.label}
+              </button>
+            )}
+            <button
+              onClick={() => dismissToast(toast.id)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'inherit',
+                opacity: 0.7,
+                cursor: 'pointer',
+                padding: '4px',
+                marginLeft: '4px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* First time user hint overlay */}
+      {showFirstTimeHint && videoUrl && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1001,
+        }}>
+          <div style={{
+            background: colors.surface,
+            borderRadius: '16px',
+            padding: '32px',
+            maxWidth: '400px',
+            textAlign: 'center',
+            border: `1px solid ${colors.border}`,
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>✂️</div>
+            <h2 style={{ color: colors.text, margin: '0 0 12px', fontSize: '22px' }}>
+              ¡Bienvenido a LosslessCut!
+            </h2>
+            <p style={{ color: colors.textSecondary, margin: '0 0 24px', lineHeight: '1.6' }}>
+              Crear clips es muy fácil:
+            </p>
+            <div style={{
+              background: colors.card,
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              textAlign: 'left',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <span style={{
+                  background: colors.accent,
+                  color: '#000',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '700',
+                  fontSize: '16px',
+                }}>I</span>
+                <span style={{ color: colors.text }}>Marca el <strong>inicio</strong> del clip</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <span style={{
+                  background: colors.secondary,
+                  color: '#fff',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '700',
+                  fontSize: '16px',
+                }}>O</span>
+                <span style={{ color: colors.text }}>Marca el <strong>fin</strong> y crea el clip</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{
+                  background: colors.border,
+                  color: colors.text,
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '700',
+                  fontSize: '10px',
+                }}>←→</span>
+                <span style={{ color: colors.text }}>Navega por el video</span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowFirstTimeHint(false);
+                localStorage.setItem('losslesscut_seen_hint', 'true');
+              }}
+              style={{
+                background: colors.primary,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '14px 32px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              ¡Entendido!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {showPreviewModal && previewVideoUrl && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1002,
+        }}>
+          <div style={{
+            background: colors.surface,
+            borderRadius: '16px',
+            padding: '24px',
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            border: `1px solid ${colors.border}`,
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: '#8b5cf6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <IoMdPlay size={20} color="#fff" />
+                </div>
+                <div>
+                  <div style={{ color: colors.text, fontWeight: '600', fontSize: '16px' }}>
+                    Vista Previa con Efectos
+                  </div>
+                  <div style={{ color: colors.textMuted, fontSize: '12px' }}>
+                    {cropConfig.enabled && `Crop: ${cropConfig.preset?.toUpperCase() || 'Custom'}`}
+                    {cropConfig.enabled && blurConfig.mode === 'auto' && ' + '}
+                    {blurConfig.mode === 'auto' && `Censura activa`}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewVideoUrl(null);
+                }}
+                style={{
+                  background: colors.card,
+                  border: 'none',
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IoMdClose size={20} />
+              </button>
+            </div>
+
+            {/* Video Preview */}
+            <div style={{
+              background: '#000',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              marginBottom: '16px',
+            }}>
+              <video
+                src={previewVideoUrl}
+                controls
+                autoPlay
+                loop
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '60vh',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            {/* Info */}
+            <div style={{
+              background: colors.card,
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: colors.textSecondary,
+                fontSize: '13px',
+              }}>
+                <span style={{ fontSize: '18px' }}>💡</span>
+                <span>
+                  Este es un preview de 5 segundos. El video exportado incluirá todos los clips seleccionados con los efectos aplicados.
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewVideoUrl(null);
+                }}
+                style={{
+                  flex: 1,
+                  background: colors.card,
+                  color: colors.text,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '10px',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewVideoUrl(null);
+                  handleExport();
+                }}
+                disabled={segments.filter(s => s.selected).length === 0}
+                style={{
+                  flex: 1,
+                  background: colors.primary,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <IoMdDownload size={16} />
+                Exportar Video Completo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSS Animation */}
+      <style>{`
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

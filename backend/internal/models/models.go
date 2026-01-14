@@ -106,6 +106,7 @@ const (
 	OperationTypeMerge    OperationType = "merge"
 	OperationTypeExport   OperationType = "export"
 	OperationTypeSnapshot OperationType = "snapshot"
+	OperationTypePreview  OperationType = "preview"
 )
 
 type OperationStatus string
@@ -141,6 +142,25 @@ type BlurRegion struct {
 	BlurIntensity int     `json:"blur_intensity"` // 10-50
 }
 
+// DetectionZone represents a circular zone for guided face detection
+type DetectionZone struct {
+	ID        string  `json:"id"`
+	X         int     `json:"x"`          // Center X in pixels
+	Y         int     `json:"y"`          // Center Y in pixels
+	Radius    int     `json:"radius"`     // Radius in pixels
+	StartTime float64 `json:"start_time"` // When zone is active
+	EndTime   float64 `json:"end_time"`   // When zone ends
+}
+
+// BlurStyleConfig represents the blur style configuration
+type BlurStyleConfig struct {
+	Style     string `json:"style"`                // "pixelate", "gaussian", "color", "box", "emoji", "image"
+	Intensity int    `json:"intensity,omitempty"`  // For pixelate/gaussian
+	Color     string `json:"color,omitempty"`      // For color style (hex)
+	Emoji     string `json:"emoji,omitempty"`      // For emoji style
+	ImageData string `json:"imageData,omitempty"`  // Base64 image for image style
+}
+
 // ExportRequest represents an export request
 type ExportRequest struct {
 	Format         string   `json:"format,omitempty"`
@@ -163,9 +183,28 @@ type ExportRequest struct {
 	CropWidth   int    `json:"crop_width,omitempty"`
 	CropHeight  int    `json:"crop_height,omitempty"`
 	// Blur settings
-	BlurMode          string       `json:"blur_mode,omitempty"`           // "off", "auto", "manual"
-	BlurAutoIntensity int          `json:"blur_auto_intensity,omitempty"` // For auto mode
-	BlurRegions       []BlurRegion `json:"blur_regions,omitempty"`        // For manual mode
+	BlurMode                string            `json:"blur_mode,omitempty"`                  // "off", "auto", "manual", "guided"
+	BlurAutoIntensity       int               `json:"blur_auto_intensity,omitempty"`        // For auto mode
+	BlurRegions             []BlurRegion      `json:"blur_regions,omitempty"`               // For manual mode
+	DetectionZones          []DetectionZone   `json:"detection_zones,omitempty"`            // For guided mode
+	BlurConfirmedSignatures [][]float64       `json:"blur_confirmed_signatures,omitempty"`  // User-confirmed face signatures
+	BlurPerClip             map[string]bool   `json:"blur_per_clip,omitempty"`              // Per-clip blur enabled/disabled
+	BlurStyle               *BlurStyleConfig  `json:"blur_style,omitempty"`                 // Blur style configuration
+}
+
+// PreviewRequest represents a preview generation request
+type PreviewRequest struct {
+	VideoID        string          `json:"video_id" binding:"required"`
+	StartTime      float64         `json:"start_time"`                        // Start time for preview
+	Duration       float64         `json:"duration,omitempty"`                // Preview duration (default 5s)
+	CropEnabled    bool            `json:"crop_enabled,omitempty"`
+	CropX          int             `json:"crop_x,omitempty"`
+	CropY          int             `json:"crop_y,omitempty"`
+	CropWidth      int             `json:"crop_width,omitempty"`
+	CropHeight     int             `json:"crop_height,omitempty"`
+	BlurMode       string          `json:"blur_mode,omitempty"`
+	BlurIntensity  int             `json:"blur_intensity,omitempty"`
+	DetectionZones []DetectionZone `json:"detection_zones,omitempty"`
 }
 
 // Download represents a video download from URL

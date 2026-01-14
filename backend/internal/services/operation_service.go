@@ -191,13 +191,32 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 			return
 		}
 		end := *seg.End
+
+		// Check if blur is enabled for this specific clip
+		blurEnabledForClip := true
+		if request.BlurPerClip != nil {
+			if enabled, exists := request.BlurPerClip[seg.ID]; exists {
+				blurEnabledForClip = enabled
+			}
+		}
+
 		s.logger.Info("Exporting single segment",
+			zap.String("segmentId", seg.ID),
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.Float64("duration", end-seg.Start),
 			zap.Bool("hasFilters", s.hasFilters(request)),
+			zap.Bool("blurEnabled", blurEnabledForClip),
 		)
-		exportErr = s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, request, onProgress)
+
+		// Create a modified request for this segment
+		segRequest := request
+		if !blurEnabledForClip {
+			// Disable blur for this segment
+			segRequest.BlurMode = "off"
+		}
+
+		exportErr = s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, segRequest, onProgress)
 		if exportErr == nil {
 			outputFiles = append(outputFiles, outputPath)
 		}
@@ -308,16 +327,33 @@ func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, 
 
 		end := *seg.End // Already validated above
 
+		// Check if blur is enabled for this specific clip
+		blurEnabledForClip := true
+		if request.BlurPerClip != nil {
+			if enabled, exists := request.BlurPerClip[seg.ID]; exists {
+				blurEnabledForClip = enabled
+			}
+		}
+
 		s.logger.Info("Cutting segment",
 			zap.Int("index", i),
+			zap.String("segmentId", seg.ID),
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.String("tempFile", tempFile),
 			zap.Bool("hasFilters", s.hasFilters(request)),
+			zap.Bool("blurEnabled", blurEnabledForClip),
 		)
 
+		// Create a modified request for this segment
+		segRequest := request
+		if !blurEnabledForClip {
+			// Disable blur for this segment
+			segRequest.BlurMode = "off"
+		}
+
 		// Cut segment with optional filters (no progress callback for individual segments)
-		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, tempFile, seg.Start, end, request, nil); err != nil {
+		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, tempFile, seg.Start, end, segRequest, nil); err != nil {
 			return fmt.Errorf("failed to cut segment %d: %w", i, err)
 		}
 	}
@@ -346,15 +382,32 @@ func (s *OperationService) exportMultipleSegments(ctx context.Context, inputPath
 		}
 		end := *seg.End
 
+		// Check if blur is enabled for this specific clip
+		blurEnabledForClip := true
+		if request.BlurPerClip != nil {
+			if enabled, exists := request.BlurPerClip[seg.ID]; exists {
+				blurEnabledForClip = enabled
+			}
+		}
+
 		s.logger.Info("Exporting separate segment",
 			zap.Int("index", i),
+			zap.String("segmentId", seg.ID),
 			zap.Float64("start", seg.Start),
 			zap.Float64("end", end),
 			zap.Float64("duration", end-seg.Start),
 			zap.Bool("hasFilters", s.hasFilters(request)),
+			zap.Bool("blurEnabled", blurEnabledForClip),
 		)
 
-		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, request, onProgress); err != nil {
+		// Create a modified request for this segment
+		segRequest := request
+		if !blurEnabledForClip {
+			// Disable blur for this segment
+			segRequest.BlurMode = "off"
+		}
+
+		if err := s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, seg.Start, end, segRequest, onProgress); err != nil {
 			return outputFiles, fmt.Errorf("failed to export segment %d: %w", i, err)
 		}
 
@@ -503,8 +556,135 @@ func (s *OperationService) GetStatus(operationID string) (*models.Operation, err
 	return operation, nil
 }
 
+// GeneratePreview creates a short preview video with effects applied
+func (s *OperationService) GeneratePreview(request models.PreviewRequest) (*models.Operation, error) {
+	operation := &models.Operation{
+		ID:        uuid.New().String(),
+		Type:      models.OperationTypePreview,
+		ProjectID: request.VideoID,
+		Status:    models.OperationStatusPending,
+		Progress:  0,
+		CreatedAt: time.Now(),
+	}
+
+	// Store operation
+	s.operations[operation.ID] = operation
+
+	// Run preview generation in background
+	go s.runPreviewGeneration(operation, request)
+
+	return operation, nil
+}
+
+func (s *OperationService) runPreviewGeneration(operation *models.Operation, request models.PreviewRequest) {
+	operation.Status = models.OperationStatusProcessing
+	operation.Progress = 5
+	ctx := context.Background()
+
+	// Get video file path
+	video, err := s.storage.GetVideo(request.VideoID)
+	if err != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("video not found: %v", err)
+		s.logger.Error("Failed to get video for preview",
+			zap.String("videoId", request.VideoID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	inputPath := video.FilePath
+
+	// Set default preview duration (5 seconds)
+	previewDuration := request.Duration
+	if previewDuration <= 0 || previewDuration > 15 {
+		previewDuration = 5
+	}
+
+	// Ensure start time is valid
+	startTime := request.StartTime
+	if startTime < 0 {
+		startTime = 0
+	}
+
+	// Calculate end time
+	endTime := startTime + previewDuration
+	if video.Duration > 0 && endTime > video.Duration {
+		endTime = video.Duration
+		startTime = endTime - previewDuration
+		if startTime < 0 {
+			startTime = 0
+		}
+	}
+
+	s.logger.Info("Generating preview",
+		zap.String("operationId", operation.ID),
+		zap.String("inputPath", inputPath),
+		zap.Float64("startTime", startTime),
+		zap.Float64("endTime", endTime),
+		zap.Float64("duration", previewDuration),
+		zap.Bool("hasCrop", request.CropEnabled),
+		zap.String("blurMode", request.BlurMode),
+	)
+
+	// Create output path for preview
+	outputPath := s.storage.GetOutputPath(fmt.Sprintf("preview_%s.mp4", operation.ID))
+
+	// Progress callback
+	onProgress := func(progress float64) {
+		scaledProgress := 10 + (progress * 85)
+		if scaledProgress > operation.Progress {
+			operation.Progress = scaledProgress
+		}
+	}
+
+	// Build export request from preview request
+	exportRequest := models.ExportRequest{
+		CropEnabled:       request.CropEnabled,
+		CropX:             request.CropX,
+		CropY:             request.CropY,
+		CropWidth:         request.CropWidth,
+		CropHeight:        request.CropHeight,
+		BlurMode:          request.BlurMode,
+		BlurAutoIntensity: request.BlurIntensity,
+		DetectionZones:    request.DetectionZones,
+	}
+
+	// Cut video with optional filters
+	var exportErr error
+	if s.hasFilters(exportRequest) || s.needsAutoBlur(exportRequest) {
+		exportErr = s.cutVideoWithOptionalFilters(ctx, inputPath, outputPath, startTime, endTime, exportRequest, onProgress)
+	} else {
+		// Just cut without filters for plain preview
+		exportErr = s.ffmpeg.CutVideo(ctx, inputPath, outputPath, startTime, endTime, onProgress)
+	}
+
+	if exportErr != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = exportErr.Error()
+		s.logger.Error("Preview generation failed",
+			zap.String("operationId", operation.ID),
+			zap.Error(exportErr),
+		)
+		return
+	}
+
+	// Success
+	now := time.Now()
+	operation.Status = models.OperationStatusCompleted
+	operation.Progress = 100
+	operation.CompletedAt = &now
+	operation.OutputFiles = []string{outputPath}
+
+	s.logger.Info("Preview generated successfully",
+		zap.String("operationId", operation.ID),
+		zap.String("outputPath", outputPath),
+	)
+}
+
 // buildFilterOptions creates FilterOptions from ExportRequest
-func (s *OperationService) buildFilterOptions(request models.ExportRequest) ffmpeg.FilterOptions {
+// segmentStart is the start time of the segment being cut, used to adjust blur region times
+func (s *OperationService) buildFilterOptions(request models.ExportRequest, segmentStart float64) ffmpeg.FilterOptions {
 	opts := ffmpeg.FilterOptions{
 		CropEnabled: request.CropEnabled,
 		CropX:       request.CropX,
@@ -514,15 +694,38 @@ func (s *OperationService) buildFilterOptions(request models.ExportRequest) ffmp
 	}
 
 	// Add blur regions for manual mode
+	// Adjust times relative to segment start (since -ss makes video start at 0)
 	if request.BlurMode == "manual" && len(request.BlurRegions) > 0 {
 		for _, region := range request.BlurRegions {
+			// Adjust times relative to segment start
+			adjustedStartTime := region.StartTime - segmentStart
+			adjustedEndTime := region.EndTime - segmentStart
+
+			// Skip regions that are entirely outside this segment
+			if adjustedEndTime < 0 {
+				continue // Region ends before segment starts
+			}
+
+			// Clamp start time to 0 if it's before segment start
+			if adjustedStartTime < 0 {
+				adjustedStartTime = 0
+			}
+
+			s.logger.Debug("Adding blur region",
+				zap.Float64("originalStart", region.StartTime),
+				zap.Float64("originalEnd", region.EndTime),
+				zap.Float64("segmentStart", segmentStart),
+				zap.Float64("adjustedStart", adjustedStartTime),
+				zap.Float64("adjustedEnd", adjustedEndTime),
+			)
+
 			opts.BlurRegions = append(opts.BlurRegions, ffmpeg.BlurRegionFilter{
 				X:             region.X,
 				Y:             region.Y,
 				Width:         region.Width,
 				Height:        region.Height,
-				StartTime:     region.StartTime,
-				EndTime:       region.EndTime,
+				StartTime:     adjustedStartTime,
+				EndTime:       adjustedEndTime,
 				BlurIntensity: region.BlurIntensity,
 			})
 		}
@@ -536,9 +739,14 @@ func (s *OperationService) hasFilters(request models.ExportRequest) bool {
 	return request.CropEnabled || (request.BlurMode == "manual" && len(request.BlurRegions) > 0)
 }
 
-// needsAutoBlur checks if auto face blur is requested
+// needsAutoBlur checks if auto or guided face blur is requested
 func (s *OperationService) needsAutoBlur(request models.ExportRequest) bool {
-	return request.BlurMode == "auto"
+	return request.BlurMode == "auto" || request.BlurMode == "guided"
+}
+
+// needsGuidedBlur checks if guided face blur is requested
+func (s *OperationService) needsGuidedBlur(request models.ExportRequest) bool {
+	return request.BlurMode == "guided" && len(request.DetectionZones) > 0
 }
 
 // cutVideoWithOptionalFilters cuts video with or without filters based on request
@@ -559,7 +767,8 @@ func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inpu
 	// Cut with optional crop/manual blur
 	var err error
 	if s.hasFilters(request) {
-		filterOpts := s.buildFilterOptions(request)
+		// Pass segment start time to adjust blur region times
+		filterOpts := s.buildFilterOptions(request, start)
 		err = s.ffmpeg.CutVideoWithFilters(ctx, inputPath, tempOutput, start, end, filterOpts, func(p float64) {
 			if onProgress != nil {
 				if s.needsAutoBlur(request) {
@@ -585,30 +794,73 @@ func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inpu
 		return err
 	}
 
-	// Apply auto face blur if needed
+	// Apply auto or guided face blur if needed
 	if s.needsAutoBlur(request) {
-		s.logger.Info("Applying auto face blur",
-			zap.String("tempOutput", tempOutput),
-			zap.String("finalOutput", finalOutput),
-			zap.Int("intensity", request.BlurAutoIntensity),
-		)
-
 		intensity := request.BlurAutoIntensity
 		if intensity <= 0 {
 			intensity = 25 // Default
 		}
 
-		err = s.ffmpeg.BlurFacesAuto(ctx, tempOutput, finalOutput, intensity, func(p float64) {
-			if onProgress != nil {
-				onProgress(0.5 + (p * 0.5)) // Last 50% for face blur
+		if s.needsGuidedBlur(request) {
+			// Guided mode - detect faces only in specified zones
+			s.logger.Info("Applying guided face blur",
+				zap.String("tempOutput", tempOutput),
+				zap.String("finalOutput", finalOutput),
+				zap.Int("intensity", intensity),
+				zap.Int("zones", len(request.DetectionZones)),
+			)
+
+			// Convert models.DetectionZone to ffmpeg.DetectionZone
+			zones := make([]ffmpeg.DetectionZone, len(request.DetectionZones))
+			for i, z := range request.DetectionZones {
+				zones[i] = ffmpeg.DetectionZone{
+					ID:        z.ID,
+					X:         z.X,
+					Y:         z.Y,
+					Radius:    z.Radius,
+					StartTime: z.StartTime,
+					EndTime:   z.EndTime,
+				}
 			}
-		})
+
+			err = s.ffmpeg.BlurFacesGuided(ctx, tempOutput, finalOutput, intensity, zones, func(p float64) {
+				if onProgress != nil {
+					onProgress(0.5 + (p * 0.5)) // Last 50% for face blur
+				}
+			})
+		} else {
+			// Auto mode - full frame face detection
+			s.logger.Info("Applying auto face blur",
+				zap.String("tempOutput", tempOutput),
+				zap.String("finalOutput", finalOutput),
+				zap.Int("intensity", intensity),
+				zap.Int("confirmedSignatures", len(request.BlurConfirmedSignatures)),
+			)
+
+			// Build blur style config
+			var blurStyle *ffmpeg.BlurStyleConfig
+			if request.BlurStyle != nil {
+				blurStyle = &ffmpeg.BlurStyleConfig{
+					Style:     request.BlurStyle.Style,
+					Intensity: request.BlurStyle.Intensity,
+					Color:     request.BlurStyle.Color,
+					Emoji:     request.BlurStyle.Emoji,
+					ImageData: request.BlurStyle.ImageData,
+				}
+			}
+
+			err = s.ffmpeg.BlurFacesAuto(ctx, tempOutput, finalOutput, intensity, request.BlurConfirmedSignatures, blurStyle, func(p float64) {
+				if onProgress != nil {
+					onProgress(0.5 + (p * 0.5)) // Last 50% for face blur
+				}
+			})
+		}
 
 		// Clean up temp file
 		s.storage.DeleteFile(tempOutput)
 
 		if err != nil {
-			return fmt.Errorf("auto face blur failed: %w", err)
+			return fmt.Errorf("face blur failed: %w", err)
 		}
 	}
 

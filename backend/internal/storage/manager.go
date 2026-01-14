@@ -498,3 +498,99 @@ func (m *Manager) DeleteVideo(id string) error {
 	metadataPath := m.GetVideoMetadataPath(id)
 	return m.DeleteFile(metadataPath)
 }
+
+// CleanupOldFiles deletes files older than the specified duration
+func (m *Manager) CleanupOldFiles(maxAge time.Duration) (int, error) {
+	m.logger.Info("Starting cleanup of old files", zap.Duration("maxAge", maxAge))
+	cutoffTime := time.Now().Add(-maxAge)
+	deletedCount := 0
+
+	// Cleanup videos older than maxAge
+	videos, err := m.ListVideos()
+	if err == nil {
+		for _, video := range videos {
+			if video.CreatedAt.Before(cutoffTime) {
+				if err := m.DeleteVideo(video.ID); err != nil {
+					m.logger.Warn("Failed to delete old video", zap.String("id", video.ID), zap.Error(err))
+				} else {
+					m.logger.Info("Deleted old video", zap.String("id", video.ID), zap.Time("createdAt", video.CreatedAt))
+					deletedCount++
+				}
+			}
+		}
+	}
+
+	// Cleanup downloads older than maxAge
+	downloads, err := m.ListDownloads()
+	if err == nil {
+		for _, download := range downloads {
+			if download.CreatedAt.Before(cutoffTime) {
+				if err := m.DeleteDownload(download.ID); err != nil {
+					m.logger.Warn("Failed to delete old download", zap.String("id", download.ID), zap.Error(err))
+				} else {
+					m.logger.Info("Deleted old download", zap.String("id", download.ID), zap.Time("createdAt", download.CreatedAt))
+					deletedCount++
+				}
+			}
+		}
+	}
+
+	// Cleanup projects older than maxAge
+	projects, err := m.ListProjects()
+	if err == nil {
+		for _, project := range projects {
+			if project.UpdatedAt.Before(cutoffTime) {
+				if err := m.DeleteProject(project.ID); err != nil {
+					m.logger.Warn("Failed to delete old project", zap.String("id", project.ID), zap.Error(err))
+				} else {
+					m.logger.Info("Deleted old project", zap.String("id", project.ID), zap.Time("updatedAt", project.UpdatedAt))
+					deletedCount++
+				}
+			}
+		}
+	}
+
+	// Cleanup old output files
+	deletedCount += m.cleanupOldFilesInDir(m.OutputsDir(), cutoffTime)
+
+	// Cleanup old temp files
+	deletedCount += m.cleanupOldFilesInDir(m.TempDir(), cutoffTime)
+
+	// Cleanup old screenshots
+	deletedCount += m.cleanupOldFilesInDir(m.ScreenshotsDir(), cutoffTime)
+
+	// Cleanup old waveforms
+	deletedCount += m.cleanupOldFilesInDir(m.WaveformsDir(), cutoffTime)
+
+	m.logger.Info("Cleanup completed", zap.Int("deletedCount", deletedCount))
+	return deletedCount, nil
+}
+
+// cleanupOldFilesInDir deletes files in a directory older than cutoffTime
+func (m *Manager) cleanupOldFilesInDir(dir string, cutoffTime time.Time) int {
+	deleted := 0
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoffTime) {
+			if err := os.Remove(path); err != nil {
+				m.logger.Warn("Failed to delete old file", zap.String("path", path), zap.Error(err))
+			} else {
+				m.logger.Info("Deleted old file", zap.String("path", path), zap.Time("modTime", info.ModTime()))
+				deleted++
+			}
+		}
+	}
+	return deleted
+}

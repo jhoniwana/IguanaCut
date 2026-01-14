@@ -397,3 +397,46 @@ func (h *VideoHandler) List(c *gin.Context) {
 
 	c.JSON(http.StatusOK, videos)
 }
+
+// DetectFacesRequest represents the request for face detection
+type DetectFacesRequest struct {
+	Interval float64 `json:"interval"` // Sample interval in seconds
+	MaxFaces int     `json:"max_faces"` // Maximum faces to detect
+}
+
+// DetectFaces scans a video and returns detected face thumbnails for confirmation
+func (h *VideoHandler) DetectFaces(c *gin.Context) {
+	videoID := c.Param("id")
+
+	// Get video metadata
+	video, err := h.services.Video.GetVideo(videoID)
+	if err != nil {
+		h.logger.Error("Video not found", zap.String("id", videoID), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+
+	var req DetectFacesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Use defaults
+		req.Interval = 0.5
+		req.MaxFaces = 20
+	}
+
+	if req.Interval <= 0 {
+		req.Interval = 0.5
+	}
+	if req.MaxFaces <= 0 {
+		req.MaxFaces = 20
+	}
+
+	// Run face detection script
+	result, err := h.services.Video.DetectFaces(video.FilePath, req.Interval, req.MaxFaces)
+	if err != nil {
+		h.logger.Error("Face detection failed", zap.String("videoId", videoID), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "face detection failed: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}

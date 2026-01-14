@@ -66,6 +66,12 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			}
 		}
 
+		// Preview endpoint - generates short video preview with effects
+		{
+			projectHandler := handlers.NewProjectHandler(services, logger)
+			api.POST("/preview", projectHandler.Preview)
+		}
+
 		// Video endpoints
 		videos := api.Group("/videos")
 		{
@@ -76,6 +82,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			videos.GET("/:id/stream", videoHandler.Stream)
 			videos.GET("/:id/waveform", videoHandler.Waveform)
 			videos.POST("/:id/screenshot", videoHandler.Screenshot)
+			videos.POST("/:id/detect-faces", videoHandler.DetectFaces)
 			videos.DELETE("/:id", videoHandler.Delete)
 		}
 

@@ -27,7 +27,26 @@ ENV VITE_API_URL=http://localhost:8080
 RUN yarn build:web
 
 # =====================================
-# Stage 2: Runtime Image
+# Stage 2: Build Go Backend
+# =====================================
+FROM golang:1.21-bookworm AS backend-builder
+
+WORKDIR /app
+
+# Copy Go module files
+COPY backend/go.mod backend/go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY backend/ ./
+
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o lossless-cut-server ./cmd/server
+
+# =====================================
+# Stage 3: Runtime Image
 # =====================================
 FROM debian:bookworm-slim
 
@@ -38,16 +57,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     ca-certificates \
     wget \
+    fonts-noto-color-emoji \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp and OpenCV for face detection
+# Install yt-dlp, OpenCV, MediaPipe, and Pillow for face detection and blur styles
 RUN pip3 install --no-cache-dir --break-system-packages \
     yt-dlp \
     opencv-python-headless \
-    numpy
+    opencv-contrib-python-headless \
+    numpy \
+    mediapipe \
+    Pillow
 
 # Verify installations
-RUN ffmpeg -version && yt-dlp --version && python3 -c "import cv2; print('OpenCV:', cv2.__version__)"
+RUN ffmpeg -version && yt-dlp --version && python3 -c "import cv2; print('OpenCV:', cv2.__version__)" && python3 -c "import mediapipe; print('MediaPipe installed')" && python3 -c "from PIL import Image; print('Pillow installed')"
 
 # Create non-root user
 RUN groupadd -g 1000 losslesscut && \
@@ -59,8 +83,8 @@ RUN mkdir -p /var/losslesscut/uploads /var/losslesscut/outputs /var/losslesscut/
 
 WORKDIR /app
 
-# Copy pre-built Go binary (we don't have Go source)
-COPY backend/lossless-cut-server ./server
+# Copy Go binary from builder stage
+COPY --from=backend-builder /app/lossless-cut-server ./server
 
 # Copy frontend build from stage 1
 COPY --from=frontend-builder /app/backend/web ./web
@@ -68,11 +92,12 @@ COPY --from=frontend-builder /app/backend/web ./web
 # Copy config
 COPY backend/config/config.yaml /etc/losslesscut/config.yaml
 
-# Copy face blur script
+# Copy face blur and detection scripts
 COPY backend/scripts/blur_faces.py ./scripts/blur_faces.py
+COPY backend/scripts/detect_faces.py ./scripts/detect_faces.py
 
 # Make binary and scripts executable
-RUN chmod +x ./server ./scripts/blur_faces.py && chown -R losslesscut:losslesscut ./server ./scripts
+RUN chmod +x ./server ./scripts/blur_faces.py ./scripts/detect_faces.py && chown -R losslesscut:losslesscut ./server ./scripts
 
 # Use non-root user
 USER losslesscut

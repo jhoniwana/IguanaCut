@@ -276,14 +276,15 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
           </div>
 
           {fileFormat != null && (
-          <div style={{ marginBottom: '1em' }}>
-            <FileNameTemplateEditor mode="merge-files" template={mergedFileTemplate} setTemplate={setMergedFileTemplate} defaultTemplate={defaultMergedFileTemplate} generateFileNames={generateFileNames} />
-          </div>
+            <div style={{ marginBottom: '1em' }}>
+              <FileNameTemplateEditor mode="merge-files" template={mergedFileTemplate} setTemplate={setMergedFileTemplate} defaultTemplate={defaultMergedFileTemplate} generateFileNames={generateFileNames} />
+            </div>
+          )}
 
           {introOutroConfig && setIntroOutroConfig && (
-            <IntroOutroSelector 
-              config={introOutroConfig} 
-              onChange={setIntroOutroConfig} 
+            <IntroOutroSelector
+              config={introOutroConfig}
+              onChange={setIntroOutroConfig}
             />
           )}
 

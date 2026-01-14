@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -25,18 +26,49 @@ type FaceBlurProgress struct {
 	OutputPath     string  `json:"output_path"`
 }
 
+// BlurStyleConfig holds blur style configuration
+type BlurStyleConfig struct {
+	Style     string `json:"style"`     // pixelate, gaussian, color, box, emoji, image
+	Intensity int    `json:"intensity"` // For pixelate/gaussian
+	Color     string `json:"color"`     // For color style (hex)
+	Emoji     string `json:"emoji"`     // For emoji style
+	ImageData string `json:"imageData"` // Base64 image for image style
+}
+
 // BlurFacesAuto detects and blurs faces automatically using OpenCV
-func (e *Executor) BlurFacesAuto(ctx context.Context, input, output string, intensity int, onProgress ProgressCallback) error {
+func (e *Executor) BlurFacesAuto(ctx context.Context, input, output string, intensity int, confirmedSignatures [][]float64, blurStyle *BlurStyleConfig, onProgress ProgressCallback) error {
 	// Find the Python script
 	scriptPath := e.findBlurScript()
 	if scriptPath == "" {
 		return fmt.Errorf("blur_faces.py script not found")
 	}
 
+	// Default blur style
+	style := "pixelate"
+	color := "#000000"
+	emoji := "😀"
+	imageData := ""
+	if blurStyle != nil {
+		if blurStyle.Style != "" {
+			style = blurStyle.Style
+		}
+		if blurStyle.Color != "" {
+			color = blurStyle.Color
+		}
+		if blurStyle.Emoji != "" {
+			emoji = blurStyle.Emoji
+		}
+		if blurStyle.ImageData != "" {
+			imageData = blurStyle.ImageData
+		}
+	}
+
 	e.logger.Info("Starting auto face blur",
 		zap.String("input", input),
 		zap.String("output", output),
 		zap.Int("intensity", intensity),
+		zap.String("style", style),
+		zap.Int("confirmedSignatures", len(confirmedSignatures)),
 		zap.String("script", scriptPath),
 	)
 
@@ -51,6 +83,22 @@ func (e *Executor) BlurFacesAuto(ctx context.Context, input, output string, inte
 		"--input", input,
 		"--output", output,
 		"--intensity", fmt.Sprintf("%d", intensity),
+		"--style", style,
+		"--color", color,
+		"--emoji", emoji,
+	}
+
+	// Add image data if provided (for image style)
+	if style == "image" && imageData != "" {
+		args = append(args, "--image", imageData)
+	}
+
+	// Add confirmed signatures if provided
+	if len(confirmedSignatures) > 0 {
+		signaturesJSON, err := json.Marshal(confirmedSignatures)
+		if err == nil {
+			args = append(args, "--signatures", string(signaturesJSON))
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, pythonCmd, args...)
@@ -121,6 +169,234 @@ func (e *Executor) BlurFacesAuto(ctx context.Context, input, output string, inte
 	return nil
 }
 
+// DetectionZone represents a circular zone for guided face detection
+type DetectionZone struct {
+	ID        string  `json:"id"`
+	X         int     `json:"x"`
+	Y         int     `json:"y"`
+	Radius    int     `json:"radius"`
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+}
+
+// BlurFacesGuided detects and blurs faces only within specified zones
+func (e *Executor) BlurFacesGuided(ctx context.Context, input, output string, intensity int, zones []DetectionZone, onProgress ProgressCallback) error {
+	// Find the Python script
+	scriptPath := e.findBlurScript()
+	if scriptPath == "" {
+		return fmt.Errorf("blur_faces.py script not found")
+	}
+
+	e.logger.Info("Starting guided face blur",
+		zap.String("input", input),
+		zap.String("output", output),
+		zap.Int("intensity", intensity),
+		zap.Int("zones", len(zones)),
+		zap.String("script", scriptPath),
+	)
+
+	// Convert zones to JSON
+	zonesJSON, err := json.Marshal(zones)
+	if err != nil {
+		return fmt.Errorf("failed to marshal zones: %w", err)
+	}
+
+	// Build command
+	pythonCmd := "python3"
+	if runtime.GOOS == "windows" {
+		pythonCmd = "python"
+	}
+
+	args := []string{
+		scriptPath,
+		"--input", input,
+		"--output", output,
+		"--intensity", fmt.Sprintf("%d", intensity),
+		"--zones", string(zonesJSON),
+	}
+
+	cmd := exec.CommandContext(ctx, pythonCmd, args...)
+
+	// Capture stdout for progress
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	// Capture stderr for errors
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start face blur script: %w", err)
+	}
+
+	// Read stdout for progress updates
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			var progress FaceBlurProgress
+			if err := json.Unmarshal([]byte(line), &progress); err != nil {
+				e.logger.Debug("Non-JSON output from blur script", zap.String("line", line))
+				continue
+			}
+
+			if progress.Error != "" {
+				e.logger.Error("Error from blur script", zap.String("error", progress.Error))
+				continue
+			}
+
+			if onProgress != nil && progress.Progress > 0 {
+				onProgress(progress.Progress)
+			}
+
+			e.logger.Debug("Guided face blur progress",
+				zap.Float64("progress", progress.Progress),
+				zap.Int("frame", progress.Frame),
+				zap.Int("facesInFrame", progress.FacesInFrame),
+			)
+		}
+	}()
+
+	// Read stderr for errors
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			e.logger.Warn("Blur script stderr", zap.String("line", scanner.Text()))
+		}
+	}()
+
+	// Wait for completion
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("guided face blur script failed: %w", err)
+	}
+
+	e.logger.Info("Guided face blur completed successfully",
+		zap.String("output", output),
+		zap.Int("zones_used", len(zones)),
+	)
+
+	return nil
+}
+
+// DetectFaces runs face detection and returns thumbnails for user confirmation
+func (e *Executor) DetectFaces(ctx context.Context, input string, interval float64, maxFaces int) (map[string]interface{}, error) {
+	scriptPath := e.findDetectScript()
+	if scriptPath == "" {
+		return nil, fmt.Errorf("detect_faces.py script not found")
+	}
+
+	e.logger.Info("Starting face detection preview",
+		zap.String("input", input),
+		zap.Float64("interval", interval),
+		zap.Int("maxFaces", maxFaces),
+		zap.String("script", scriptPath),
+	)
+
+	pythonCmd := "python3"
+	if runtime.GOOS == "windows" {
+		pythonCmd = "python"
+	}
+
+	args := []string{
+		scriptPath,
+		"--input", input,
+		"--interval", fmt.Sprintf("%.2f", interval),
+		"--max-faces", fmt.Sprintf("%d", maxFaces),
+	}
+
+	cmd := exec.CommandContext(ctx, pythonCmd, args...)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("face detection failed: %s", string(exitErr.Stderr))
+		}
+		return nil, fmt.Errorf("face detection failed: %w", err)
+	}
+
+	// Parse the last JSON line (the result)
+	lines := splitLines(string(output))
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("no output from face detection script")
+	}
+
+	// Find the last valid JSON with "faces" or "error" key
+	var result map[string]interface{}
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &result); err == nil {
+			if _, hasFaces := result["faces"]; hasFaces {
+				break
+			}
+			if _, hasError := result["error"]; hasError {
+				break
+			}
+		}
+	}
+
+	if result == nil {
+		return nil, fmt.Errorf("failed to parse face detection output")
+	}
+
+	if errMsg, ok := result["error"].(string); ok {
+		return nil, fmt.Errorf(errMsg)
+	}
+
+	e.logger.Info("Face detection completed",
+		zap.Int("faces_found", len(result["faces"].([]interface{}))),
+	)
+
+	return result, nil
+}
+
+// splitLines splits a string into lines
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
+// findDetectScript locates the detect_faces.py script
+func (e *Executor) findDetectScript() string {
+	possiblePaths := []string{
+		"scripts/detect_faces.py",
+		"./scripts/detect_faces.py",
+		"../scripts/detect_faces.py",
+		"/app/scripts/detect_faces.py",
+		"/opt/losslesscut/scripts/detect_faces.py",
+	}
+
+	for _, path := range possiblePaths {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			continue
+		}
+		if fileExists(absPath) {
+			return absPath
+		}
+	}
+
+	return ""
+}
+
 // findBlurScript locates the blur_faces.py script
 func (e *Executor) findBlurScript() string {
 	// Try common locations
@@ -156,6 +432,6 @@ func (e *Executor) findBlurScript() string {
 
 // fileExists checks if a file exists
 func fileExists(path string) bool {
-	_, err := exec.Command("test", "-f", path).Output()
+	_, err := os.Stat(path)
 	return err == nil
 }

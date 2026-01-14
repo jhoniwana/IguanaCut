@@ -1,25 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FiCrop, FiSquare, FiMonitor, FiFilm, FiMove } from 'react-icons/fi';
-import { IoMdClose, IoMdCheckmark } from 'react-icons/io';
+import { FiCrop, FiMove, FiX } from 'react-icons/fi';
+import { IoMdCheckmarkCircle } from 'react-icons/io';
 
-// Clean colors matching VideoEditor
+// Gemstone Inc inspired colors - Modern luxury aesthetic
 const colors = {
-  bg: '#0f0f0f',
-  surface: '#1a1a1a',
-  card: '#222222',
-  border: '#333333',
-  primary: '#10b981',
-  secondary: '#3b82f6',
-  accent: '#f59e0b',
-  danger: '#ef4444',
+  bg: '#0a0a0f',
+  surface: '#12121a',
+  card: '#1a1a24',
+  border: '#2a2a3a',
+  primary: '#00E5FF',
+  secondary: '#FF148A',
+  accent: '#FFC800',
+  danger: '#ff4466',
   text: '#ffffff',
-  textSecondary: '#a1a1a1',
-  textMuted: '#666666',
+  textSecondary: '#b0b0c0',
+  textMuted: '#606070',
+  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
+  gradientAccent: 'linear-gradient(135deg, #FF148A 0%, #FFC800 100%)',
 };
 
 export interface CropConfig {
   enabled: boolean;
-  preset: 'tiktok' | 'instagram' | 'youtube' | 'cinema' | 'free' | null;
+  preset: 'tiktok' | 'instagram' | 'youtube' | 'cinema' | 'portrait43' | 'free' | null;
   x: number;
   y: number;
   width: number;
@@ -27,19 +29,21 @@ export interface CropConfig {
 }
 
 interface CropPreset {
-  id: 'tiktok' | 'instagram' | 'youtube' | 'cinema' | 'free';
+  id: 'tiktok' | 'instagram' | 'youtube' | 'cinema' | 'portrait43' | 'free';
   name: string;
-  icon: React.ReactNode;
-  aspectRatio: number | null; // null for free
+  aspectRatio: number | null;
   description: string;
+  icon: string;
+  color: string;
 }
 
 const PRESETS: CropPreset[] = [
-  { id: 'tiktok', name: 'TikTok', icon: <span style={{ fontWeight: 'bold' }}>9:16</span>, aspectRatio: 9 / 16, description: 'Vertical para TikTok/Reels' },
-  { id: 'instagram', name: 'Instagram', icon: <FiSquare size={16} />, aspectRatio: 1, description: 'Cuadrado 1:1' },
-  { id: 'youtube', name: 'YouTube', icon: <FiMonitor size={16} />, aspectRatio: 16 / 9, description: 'Horizontal 16:9' },
-  { id: 'cinema', name: 'Cine', icon: <FiFilm size={16} />, aspectRatio: 21 / 9, description: 'Cinematográfico 21:9' },
-  { id: 'free', name: 'Libre', icon: <FiMove size={16} />, aspectRatio: null, description: 'Dimensiones personalizadas' },
+  { id: 'tiktok', name: '9:16', aspectRatio: 9 / 16, description: 'TikTok, Reels, Shorts', icon: '◆', color: '#FF148A' },
+  { id: 'portrait43', name: '3:4', aspectRatio: 3 / 4, description: 'Retrato vertical', icon: '◇', color: '#AA66FF' },
+  { id: 'instagram', name: '1:1', aspectRatio: 1, description: 'Instagram cuadrado', icon: '◈', color: '#00E5FF' },
+  { id: 'youtube', name: '16:9', aspectRatio: 16 / 9, description: 'YouTube, TV', icon: '◆', color: '#FF4466' },
+  { id: 'cinema', name: '21:9', aspectRatio: 21 / 9, description: 'Cinematográfico', icon: '◇', color: '#FFC800' },
+  { id: 'free', name: 'Libre', aspectRatio: null, description: 'Tamaño personalizado', icon: '✦', color: colors.textMuted },
 ];
 
 interface Props {
@@ -71,13 +75,11 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
       const currentRatio = videoWidth / videoHeight;
 
       if (currentRatio > targetRatio) {
-        // Video is wider than target - crop sides
         newWidth = Math.round(videoHeight * targetRatio);
         newHeight = videoHeight;
         newX = Math.round((videoWidth - newWidth) / 2);
         newY = 0;
       } else {
-        // Video is taller than target - crop top/bottom
         newWidth = videoWidth;
         newHeight = Math.round(videoWidth / targetRatio);
         newX = 0;
@@ -100,7 +102,6 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
     });
   }, [videoWidth, videoHeight, onChange]);
 
-  // Update local state when config changes externally
   useEffect(() => {
     setLocalX(config.x);
     setLocalY(config.y);
@@ -108,7 +109,6 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
     setLocalHeight(config.height);
   }, [config.x, config.y, config.width, config.height]);
 
-  // Handle slider changes
   const handlePositionChange = (axis: 'x' | 'y', value: number) => {
     if (axis === 'x') {
       const maxX = videoWidth - localWidth;
@@ -121,25 +121,6 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
       setLocalY(newY);
       onChange({ ...config, y: newY, preset: 'free' });
     }
-  };
-
-  const handleSizeChange = (dimension: 'width' | 'height', value: number) => {
-    if (dimension === 'width') {
-      const newWidth = Math.max(100, Math.min(videoWidth - localX, value));
-      setLocalWidth(newWidth);
-      onChange({ ...config, width: newWidth, preset: 'free' });
-    } else {
-      const newHeight = Math.max(100, Math.min(videoHeight - localY, value));
-      setLocalHeight(newHeight);
-      onChange({ ...config, height: newHeight, preset: 'free' });
-    }
-  };
-
-  const toggleCrop = () => {
-    onChange({
-      ...config,
-      enabled: !config.enabled,
-    });
   };
 
   const resetCrop = () => {
@@ -157,48 +138,40 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
     });
   };
 
-  const buttonStyle = (isActive: boolean): React.CSSProperties => ({
-    background: isActive ? colors.primary : colors.card,
-    color: isActive ? '#fff' : colors.textSecondary,
-    border: `1px solid ${isActive ? colors.primary : colors.border}`,
-    borderRadius: '8px',
-    padding: '10px 12px',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-    flex: 1,
-    minWidth: '70px',
-    transition: 'all 0.2s ease',
-  });
+  // Mini preview component for aspect ratio
+  const AspectPreview = ({ ratio, isActive, color }: { ratio: number | null; isActive: boolean; color: string }) => {
+    const previewSize = 40;
+    let w, h;
 
-  const sliderContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    marginBottom: '12px',
-  };
+    if (ratio === null) {
+      w = previewSize * 0.8;
+      h = previewSize * 0.6;
+    } else if (ratio > 1) {
+      w = previewSize;
+      h = previewSize / ratio;
+    } else {
+      h = previewSize;
+      w = previewSize * ratio;
+    }
 
-  const sliderLabelStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    fontSize: '11px',
-    color: colors.textMuted,
-  };
-
-  const sliderStyle: React.CSSProperties = {
-    width: '100%',
-    height: '6px',
-    WebkitAppearance: 'none',
-    appearance: 'none',
-    background: colors.border,
-    borderRadius: '3px',
-    outline: 'none',
-    cursor: 'pointer',
+    return (
+      <div style={{
+        width: `${previewSize}px`,
+        height: `${previewSize}px`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{
+          width: `${w}px`,
+          height: `${h}px`,
+          border: `2px solid ${isActive ? color : colors.border}`,
+          borderRadius: '3px',
+          background: isActive ? `${color}33` : 'transparent',
+          transition: 'all 0.2s ease',
+        }} />
+      </div>
+    );
   };
 
   return (
@@ -215,91 +188,147 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
         alignItems: 'center',
         marginBottom: '16px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FiCrop size={18} color={colors.primary} />
-          <span style={{ color: colors.text, fontWeight: '600', fontSize: '14px' }}>
-            Recortar Video
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '10px',
+            background: config.enabled ? colors.primary : colors.card,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <FiCrop size={18} color={config.enabled ? '#fff' : colors.textMuted} />
+          </div>
+          <div>
+            <div style={{ color: colors.text, fontWeight: '600', fontSize: '15px' }}>
+              Recortar Video
+            </div>
+            <div style={{ color: colors.textMuted, fontSize: '11px' }}>
+              Cambia el formato de tu video
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={toggleCrop}
-            style={{
-              background: config.enabled ? colors.primary : colors.card,
-              color: config.enabled ? '#fff' : colors.textMuted,
-              border: 'none',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              fontSize: '11px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            {config.enabled ? <IoMdCheckmark size={14} /> : null}
-            {config.enabled ? 'Activo' : 'Inactivo'}
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: colors.textMuted,
-              cursor: 'pointer',
-              padding: '4px',
-            }}
-          >
-            <IoMdClose size={18} />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: colors.card,
+            border: 'none',
+            color: colors.textMuted,
+            cursor: 'pointer',
+            padding: '8px',
+            borderRadius: '8px',
+          }}
+        >
+          <FiX size={18} />
+        </button>
       </div>
 
-      {/* Presets */}
-      <div style={{ marginBottom: '16px' }}>
+      {/* Status Badge */}
+      {config.enabled && config.preset && (
         <div style={{
-          fontSize: '11px',
-          color: colors.textMuted,
-          marginBottom: '8px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          padding: '10px',
+          background: `${colors.primary}22`,
+          borderRadius: '8px',
+          marginBottom: '16px',
+          border: `1px solid ${colors.primary}44`,
         }}>
-          Formato
+          <IoMdCheckmarkCircle size={18} color={colors.primary} />
+          <span style={{ color: colors.primary, fontSize: '13px', fontWeight: '600' }}>
+            Formato {PRESETS.find(p => p.id === config.preset)?.name} activo
+          </span>
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {PRESETS.map((preset) => (
+      )}
+
+      {/* Presets Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        {PRESETS.map((preset) => {
+          const isActive = config.preset === preset.id && config.enabled;
+          return (
             <button
               key={preset.id}
               onClick={() => applyPreset(preset.id)}
-              style={buttonStyle(config.preset === preset.id)}
-              title={preset.description}
+              style={{
+                background: isActive ? `${preset.color}22` : colors.card,
+                border: `2px solid ${isActive ? preset.color : colors.border}`,
+                borderRadius: '10px',
+                padding: '12px 8px',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+              }}
             >
-              {preset.icon}
-              <span>{preset.name}</span>
+              <AspectPreview ratio={preset.aspectRatio} isActive={isActive} color={preset.color} />
+              <div style={{
+                color: isActive ? preset.color : colors.text,
+                fontSize: '14px',
+                fontWeight: '700',
+              }}>
+                {preset.name}
+              </div>
+              <div style={{
+                color: colors.textMuted,
+                fontSize: '10px',
+                textAlign: 'center',
+                lineHeight: '1.3',
+              }}>
+                {preset.description}
+              </div>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* Position & Size Controls */}
+      {/* Position Controls - Only show when crop is active */}
       {config.enabled && (
         <>
-          {/* Position Controls */}
-          <div style={{ marginBottom: '12px' }}>
+          {/* Position Info */}
+          <div style={{
+            background: colors.card,
+            borderRadius: '10px',
+            padding: '14px',
+            marginBottom: '12px',
+          }}>
             <div style={{
-              fontSize: '11px',
-              color: colors.textMuted,
-              marginBottom: '8px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px',
             }}>
-              Posición
+              <FiMove size={16} color={colors.primary} />
+              <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
+                Ajustar posición
+              </span>
+              <span style={{
+                color: colors.textMuted,
+                fontSize: '11px',
+                marginLeft: 'auto',
+              }}>
+                o arrastra en el video
+              </span>
             </div>
 
-            <div style={sliderContainerStyle}>
-              <div style={sliderLabelStyle}>
-                <span>Horizontal (X)</span>
+            {/* X Slider */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                marginBottom: '6px',
+              }}>
+                <span style={{ color: colors.textMuted }}>Horizontal</span>
                 <span style={{ color: colors.primary, fontFamily: 'monospace' }}>{localX}px</span>
               </div>
               <input
@@ -308,13 +337,28 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
                 max={Math.max(0, videoWidth - localWidth)}
                 value={localX}
                 onChange={(e) => handlePositionChange('x', parseInt(e.target.value))}
-                style={sliderStyle}
+                style={{
+                  width: '100%',
+                  height: '8px',
+                  WebkitAppearance: 'none',
+                  appearance: 'none',
+                  background: colors.border,
+                  borderRadius: '4px',
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
               />
             </div>
 
-            <div style={sliderContainerStyle}>
-              <div style={sliderLabelStyle}>
-                <span>Vertical (Y)</span>
+            {/* Y Slider */}
+            <div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                marginBottom: '6px',
+              }}>
+                <span style={{ color: colors.textMuted }}>Vertical</span>
                 <span style={{ color: colors.primary, fontFamily: 'monospace' }}>{localY}px</span>
               </div>
               <input
@@ -323,77 +367,42 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
                 max={Math.max(0, videoHeight - localHeight)}
                 value={localY}
                 onChange={(e) => handlePositionChange('y', parseInt(e.target.value))}
-                style={sliderStyle}
+                style={{
+                  width: '100%',
+                  height: '8px',
+                  WebkitAppearance: 'none',
+                  appearance: 'none',
+                  background: colors.border,
+                  borderRadius: '4px',
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
               />
             </div>
           </div>
 
-          {/* Size Controls (only for free mode) */}
-          {config.preset === 'free' && (
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{
-                fontSize: '11px',
-                color: colors.textMuted,
-                marginBottom: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}>
-                Tamaño
-              </div>
-
-              <div style={sliderContainerStyle}>
-                <div style={sliderLabelStyle}>
-                  <span>Ancho</span>
-                  <span style={{ color: colors.secondary, fontFamily: 'monospace' }}>{localWidth}px</span>
-                </div>
-                <input
-                  type="range"
-                  min={100}
-                  max={videoWidth - localX}
-                  value={localWidth}
-                  onChange={(e) => handleSizeChange('width', parseInt(e.target.value))}
-                  style={sliderStyle}
-                />
-              </div>
-
-              <div style={sliderContainerStyle}>
-                <div style={sliderLabelStyle}>
-                  <span>Alto</span>
-                  <span style={{ color: colors.secondary, fontFamily: 'monospace' }}>{localHeight}px</span>
-                </div>
-                <input
-                  type="range"
-                  min={100}
-                  max={videoHeight - localY}
-                  value={localHeight}
-                  onChange={(e) => handleSizeChange('height', parseInt(e.target.value))}
-                  style={sliderStyle}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Info */}
+          {/* Output Info */}
           <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '10px 12px',
             background: colors.card,
             borderRadius: '8px',
-            padding: '10px',
-            fontSize: '11px',
-            color: colors.textSecondary,
+            marginBottom: '12px',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span>Video original:</span>
-              <span style={{ color: colors.text, fontFamily: 'monospace' }}>{videoWidth} x {videoHeight}</span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: colors.textMuted, fontSize: '10px', marginBottom: '2px' }}>Original</div>
+              <div style={{ color: colors.text, fontSize: '12px', fontFamily: 'monospace' }}>{videoWidth}×{videoHeight}</div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span>Área de recorte:</span>
-              <span style={{ color: colors.primary, fontFamily: 'monospace' }}>{localWidth} x {localHeight}</span>
+            <div style={{ color: colors.textMuted }}>→</div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: colors.textMuted, fontSize: '10px', marginBottom: '2px' }}>Salida</div>
+              <div style={{ color: colors.primary, fontSize: '12px', fontFamily: 'monospace', fontWeight: '600' }}>{localWidth}×{localHeight}</div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Aspect ratio:</span>
-              <span style={{ color: colors.accent, fontFamily: 'monospace' }}>
-                {(localWidth / localHeight).toFixed(2)}:1
-              </span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: colors.textMuted, fontSize: '10px', marginBottom: '2px' }}>Ratio</div>
+              <div style={{ color: colors.accent, fontSize: '12px', fontFamily: 'monospace' }}>{(localWidth / localHeight).toFixed(2)}</div>
             </div>
           </div>
 
@@ -402,23 +411,27 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
             onClick={resetCrop}
             style={{
               width: '100%',
-              marginTop: '12px',
               background: colors.card,
               color: colors.textMuted,
               border: `1px solid ${colors.border}`,
               borderRadius: '8px',
               padding: '10px',
-              fontSize: '12px',
-              fontWeight: '600',
+              fontSize: '13px',
+              fontWeight: '500',
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
             }}
           >
-            Restablecer
+            <FiX size={16} />
+            Desactivar recorte
           </button>
         </>
       )}
 
-      {/* Disabled State Info */}
+      {/* Hint when not active */}
       {!config.enabled && (
         <div style={{
           textAlign: 'center',
@@ -426,7 +439,7 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
           color: colors.textMuted,
           fontSize: '12px',
         }}>
-          Selecciona un formato para activar el recorte
+          👆 Selecciona un formato para comenzar
         </div>
       )}
     </div>

@@ -174,3 +174,21 @@ func (h *ProjectHandler) Export(c *gin.Context) {
 
 	c.JSON(http.StatusAccepted, operation)
 }
+
+// Preview generates a short preview video with effects applied
+func (h *ProjectHandler) Preview(c *gin.Context) {
+	var req models.PreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	operation, err := h.services.Operation.GeneratePreview(req)
+	if err != nil {
+		h.logger.Error("Failed to generate preview", zap.String("videoId", req.VideoID), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate preview"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, operation)
+}
