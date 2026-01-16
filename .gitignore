@@ -21,3 +21,23 @@ node_modules
 /common-ts-dist
 
 tsconfig.*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Model files (large)
+backend/scripts/models/
+*.onnx
+*.caffemodel
+*.prototxt
+
+# Backups
+backups/
+
+# Symlinks
+web
+
+# InsightFace models
+.insightface/

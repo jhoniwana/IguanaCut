@@ -166,17 +166,19 @@ func (e *Executor) CutVideo(ctx context.Context, input, output string, start, en
 }
 
 // accurateCut performs frame-accurate cutting by re-encoding
-// Uses high quality settings (CRF 17) to minimize quality loss
+// Uses hardware acceleration (VAAPI) for faster encoding with high quality
 func (e *Executor) accurateCut(ctx context.Context, input, output string, start, duration float64, onProgress ProgressCallback) error {
+	// Try VAAPI hardware acceleration first, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
+		"-hwaccel", "vaapi",
+		"-hwaccel_device", "/dev/dri/renderD128",
 		"-ss", fmt.Sprintf("%.6f", start), // Input seeking for speed
 		"-i", input,
 		"-t", fmt.Sprintf("%.6f", duration),
-		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", "17", // Visually nearly lossless
-		"-pix_fmt", "yuv420p",
+		"-vf", "format=nv12,hwupload",
+		"-c:v", "h264_vaapi",
+		"-qp", "18", // Quality similar to CRF 17
 		"-c:a", "aac",
 		"-b:a", "192k",
 		"-movflags", "+faststart",
@@ -184,11 +186,42 @@ func (e *Executor) accurateCut(ctx context.Context, input, output string, start,
 		output,
 	}
 
-	return e.Execute(ctx, ExecuteOptions{
+	err := e.Execute(ctx, ExecuteOptions{
 		Args:       args,
 		Duration:   duration,
 		OnProgress: onProgress,
 	})
+
+	// If VAAPI fails, fallback to CPU encoding
+	if err != nil && strings.Contains(err.Error(), "vaapi") {
+		e.logger.Warn("VAAPI encoding failed, falling back to CPU",
+			zap.Error(err),
+		)
+
+		argsCPU := []string{
+			"-hide_banner",
+			"-ss", fmt.Sprintf("%.6f", start),
+			"-i", input,
+			"-t", fmt.Sprintf("%.6f", duration),
+			"-c:v", "libx264",
+			"-preset", "fast",
+			"-crf", "17",
+			"-pix_fmt", "yuv420p",
+			"-c:a", "aac",
+			"-b:a", "192k",
+			"-movflags", "+faststart",
+			"-y",
+			output,
+		}
+
+		return e.Execute(ctx, ExecuteOptions{
+			Args:       argsCPU,
+			Duration:   duration,
+			OnProgress: onProgress,
+		})
+	}
+
+	return err
 }
 
 // FindKeyframes finds keyframe timestamps in a time range
@@ -406,8 +439,11 @@ func (e *Executor) ConvertFormat(ctx context.Context, input, output, format stri
 
 // CaptureSnapshot captures a frame as an image
 func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, timestamp float64, quality int) error {
+	// Try VAAPI hardware acceleration for faster decoding, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
+		"-hwaccel", "vaapi",
+		"-hwaccel_device", "/dev/dri/renderD128",
 		"-ss", fmt.Sprintf("%.3f", timestamp),
 		"-i", input,
 		"-vframes", "1",
@@ -416,9 +452,30 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 		output,
 	}
 
-	return e.Execute(ctx, ExecuteOptions{
+	err := e.Execute(ctx, ExecuteOptions{
 		Args: args,
 	})
+
+	// If VAAPI fails, fallback to CPU
+	if err != nil && strings.Contains(err.Error(), "vaapi") {
+		e.logger.Debug("VAAPI snapshot failed, falling back to CPU")
+
+		argsCPU := []string{
+			"-hide_banner",
+			"-ss", fmt.Sprintf("%.3f", timestamp),
+			"-i", input,
+			"-vframes", "1",
+			"-q:v", fmt.Sprintf("%d", quality),
+			"-y",
+			output,
+		}
+
+		return e.Execute(ctx, ExecuteOptions{
+			Args: argsCPU,
+		})
+	}
+
+	return err
 }
 
 // ExtractAudio extracts audio track from video
@@ -440,11 +497,13 @@ func (e *Executor) ExtractAudio(ctx context.Context, input, output string, durat
 }
 
 // GenerateWaveform generates an audio waveform image using FFmpeg showwavespic filter
+// Uses hardware acceleration for faster audio decoding
 func (e *Executor) GenerateWaveform(ctx context.Context, input, output string) error {
-	// Generate a waveform image using FFmpeg's showwavespic filter
-	// This is very fast and produces a good looking waveform
+	// Try VAAPI hardware acceleration for decoding, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
+		"-hwaccel", "vaapi",
+		"-hwaccel_device", "/dev/dri/renderD128",
 		"-i", input,
 		"-filter_complex", "showwavespic=s=1920x120:colors=#667eea|#667eea:scale=sqrt:split_channels=0",
 		"-frames:v", "1",
@@ -452,9 +511,29 @@ func (e *Executor) GenerateWaveform(ctx context.Context, input, output string) e
 		output,
 	}
 
-	return e.Execute(ctx, ExecuteOptions{
+	err := e.Execute(ctx, ExecuteOptions{
 		Args: args,
 	})
+
+	// If VAAPI fails, fallback to CPU
+	if err != nil && strings.Contains(err.Error(), "vaapi") {
+		e.logger.Debug("VAAPI waveform generation failed, falling back to CPU")
+
+		argsCPU := []string{
+			"-hide_banner",
+			"-i", input,
+			"-filter_complex", "showwavespic=s=1920x120:colors=#667eea|#667eea:scale=sqrt:split_channels=0",
+			"-frames:v", "1",
+			"-y",
+			output,
+		}
+
+		return e.Execute(ctx, ExecuteOptions{
+			Args: argsCPU,
+		})
+	}
+
+	return err
 }
 
 // SmartCutOptions contains options for smart cutting

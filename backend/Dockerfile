@@ -5,10 +5,12 @@ FROM node:18-bookworm-slim AS frontend-builder
 
 WORKDIR /app
 
+# Enable Corepack for Yarn 4
+RUN corepack enable
+
 # Copy package files
-COPY package.json yarn.lock ./
+COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn ./.yarn
-COPY .yarnrc.yml ./
 
 # Install dependencies
 RUN yarn install
@@ -101,7 +103,15 @@ RUN groupadd -g 1000 losslesscut && \
     useradd -u 1000 -g losslesscut -m losslesscut
 
 # Create directories with proper structure
-RUN mkdir -p /var/losslesscut/uploads /var/losslesscut/outputs /var/losslesscut/projects /app/web && \
+RUN mkdir -p /var/losslesscut/uploads \
+    /var/losslesscut/downloads \
+    /var/losslesscut/projects \
+    /var/losslesscut/outputs \
+    /var/losslesscut/temp \
+    /var/losslesscut/videos \
+    /var/losslesscut/waveforms \
+    /var/losslesscut/screenshots \
+    /app/web && \
     chown -R losslesscut:losslesscut /var/losslesscut /app
 
 WORKDIR /app
@@ -126,11 +136,11 @@ RUN chmod +x ./server ./scripts/blur_faces.py ./scripts/detect_faces.py && chown
 USER losslesscut
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8082
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8082/health || exit 1
 
 # Set environment variables
 ENV LOSSLESSCUT_STORAGE_BASE_PATH=/var/losslesscut

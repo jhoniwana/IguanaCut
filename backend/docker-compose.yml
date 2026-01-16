@@ -4,9 +4,10 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080:8082"
     volumes:
       - losslesscut_data:/var/losslesscut
+      - ./config:/etc/losslesscut
     # GPU access for hardware acceleration (Intel VAAPI)
     devices:
       - /dev/dri:/dev/dri
@@ -20,7 +21,7 @@ services:
       - LIBVA_DRIVER_NAME=iHD
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
       interval: 30s
       timeout: 10s
       retries: 3

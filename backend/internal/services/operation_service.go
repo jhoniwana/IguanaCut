@@ -149,6 +149,14 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 	var outputFiles []string
 	var exportErr error
 
+	// Ensure outputs directory exists
+	if err := os.MkdirAll(s.storage.OutputsDir(), 0755); err != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("failed to create outputs directory: %v", err)
+		s.logger.Error("Failed to create outputs directory", zap.Error(err))
+		return
+	}
+
 	// Handle intro/outro videos
 	var introPath, outroPath string
 	var tempFiles []string
@@ -296,6 +304,10 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 }
 
 func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, outputPath string, segments []models.Segment, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) error {
+	// Ensure temp directory exists
+	if err := os.MkdirAll(s.storage.TempDir(), 0755); err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
 	// Cut each segment to temp files
 	tempFiles := make([]string, len(segments))
 

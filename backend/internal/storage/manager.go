@@ -238,6 +238,11 @@ func (m *Manager) GetDownload(id string) (*models.Download, error) {
 func (m *Manager) UpdateDownload(download *models.Download) error {
 	download.UpdatedAt = time.Now()
 
+	// Ensure downloads directory exists
+	if err := os.MkdirAll(m.DownloadsDir(), 0755); err != nil {
+		return fmt.Errorf("failed to create downloads directory: %w", err)
+	}
+
 	data, err := json.MarshalIndent(download, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal download: %w", err)
@@ -254,6 +259,12 @@ func (m *Manager) UpdateDownload(download *models.Download) error {
 // ListDownloads returns all downloads
 func (m *Manager) ListDownloads() ([]*models.Download, error) {
 	downloadsDir := m.DownloadsDir()
+
+	// Create downloads directory if it doesn't exist
+	if err := os.MkdirAll(downloadsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create downloads directory: %w", err)
+	}
+
 	entries, err := os.ReadDir(downloadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read downloads directory: %w", err)
@@ -448,6 +459,11 @@ func (m *Manager) GetVideoMetadataPath(videoID string) string {
 
 // SaveVideo stores video metadata
 func (m *Manager) SaveVideo(video *models.Video) error {
+	// Ensure videos directory exists
+	if err := os.MkdirAll(m.VideosDir(), 0755); err != nil {
+		return fmt.Errorf("failed to create videos directory: %w", err)
+	}
+
 	data, err := json.MarshalIndent(video, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal video: %w", err)

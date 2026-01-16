@@ -1480,7 +1480,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                   onClick={() => videoRef.current && (videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause())}
-                  preload="metadata"
+                  preload="auto"
                   crossOrigin="anonymous"
                 />
 
