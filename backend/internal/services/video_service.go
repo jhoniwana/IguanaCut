@@ -190,11 +190,11 @@ func (s *VideoService) GenerateWaveform(videoID string) (string, error) {
 	return waveformPath, nil
 }
 
-func (s *VideoService) DetectFaces(videoPath string, interval float64, maxFaces int) (map[string]interface{}, error) {
+func (s *VideoService) DetectFaces(videoPath string, interval float64, maxFaces int, groupSimilar bool, segments []ffmpeg.TimeRange) (map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	result, err := s.ffmpeg.DetectFaces(ctx, videoPath, interval, maxFaces)
+	result, err := s.ffmpeg.DetectFaces(ctx, videoPath, interval, maxFaces, groupSimilar, segments)
 	if err != nil {
 		return nil, fmt.Errorf("face detection failed: %w", err)
 	}

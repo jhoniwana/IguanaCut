@@ -7,9 +7,17 @@ services:
       - "8080:8080"
     volumes:
       - losslesscut_data:/var/losslesscut
+    # GPU access for hardware acceleration (Intel VAAPI)
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "985"   # video group GID
+      - "989"   # render group GID
     environment:
       - LOSSLESSCUT_SERVER_PORT=8080
       - LOSSLESSCUT_STORAGE_BASE_PATH=/var/losslesscut
+      # VAAPI driver selection for Intel
+      - LIBVA_DRIVER_NAME=iHD
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]

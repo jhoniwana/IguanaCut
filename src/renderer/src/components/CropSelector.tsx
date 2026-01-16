@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FiCrop, FiMove, FiX } from 'react-icons/fi';
+import { FiCrop, FiMove, FiX, FiZoomIn } from 'react-icons/fi';
 import { IoMdCheckmarkCircle } from 'react-icons/io';
 
 // Gemstone Inc inspired colors - Modern luxury aesthetic
@@ -59,48 +59,110 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
   const [localY, setLocalY] = useState(config.y);
   const [localWidth, setLocalWidth] = useState(config.width);
   const [localHeight, setLocalHeight] = useState(config.height);
+  const [zoom, setZoom] = useState(100); // 100% = full size, 50% = half size (more zoom)
 
-  // Calculate crop dimensions based on preset
-  const applyPreset = useCallback((preset: CropPreset['id']) => {
+  // Calculate crop dimensions based on preset and zoom level
+  const applyPreset = useCallback((preset: CropPreset['id'], zoomLevel: number = 100) => {
     const presetInfo = PRESETS.find(p => p.id === preset);
     if (!presetInfo) return;
 
-    let newWidth = videoWidth;
-    let newHeight = videoHeight;
-    let newX = 0;
-    let newY = 0;
+    let baseWidth = videoWidth;
+    let baseHeight = videoHeight;
 
     if (presetInfo.aspectRatio !== null) {
       const targetRatio = presetInfo.aspectRatio;
       const currentRatio = videoWidth / videoHeight;
 
       if (currentRatio > targetRatio) {
-        newWidth = Math.round(videoHeight * targetRatio);
-        newHeight = videoHeight;
-        newX = Math.round((videoWidth - newWidth) / 2);
-        newY = 0;
+        baseWidth = Math.round(videoHeight * targetRatio);
+        baseHeight = videoHeight;
       } else {
-        newWidth = videoWidth;
-        newHeight = Math.round(videoWidth / targetRatio);
-        newX = 0;
-        newY = Math.round((videoHeight - newHeight) / 2);
+        baseWidth = videoWidth;
+        baseHeight = Math.round(videoWidth / targetRatio);
       }
     }
 
+    // Apply zoom (100% = full size, 50% = half size for more zoom effect)
+    const scale = zoomLevel / 100;
+    const newWidth = Math.round(baseWidth * scale);
+    const newHeight = Math.round(baseHeight * scale);
+
+    // Ensure minimum size (at least 100px)
+    const finalWidth = Math.max(100, Math.min(newWidth, videoWidth));
+    const finalHeight = Math.max(100, Math.min(newHeight, videoHeight));
+
+    // Center the crop area
+    const newX = Math.round((videoWidth - finalWidth) / 2);
+    const newY = Math.round((videoHeight - finalHeight) / 2);
+
     setLocalX(newX);
     setLocalY(newY);
-    setLocalWidth(newWidth);
-    setLocalHeight(newHeight);
+    setLocalWidth(finalWidth);
+    setLocalHeight(finalHeight);
+    setZoom(zoomLevel);
 
     onChange({
       enabled: true,
       preset,
       x: newX,
       y: newY,
-      width: newWidth,
-      height: newHeight,
+      width: finalWidth,
+      height: finalHeight,
     });
   }, [videoWidth, videoHeight, onChange]);
+
+  // Handle zoom change
+  const handleZoomChange = useCallback((newZoom: number) => {
+    if (!config.preset) return;
+
+    const presetInfo = PRESETS.find(p => p.id === config.preset);
+    if (!presetInfo) return;
+
+    let baseWidth = videoWidth;
+    let baseHeight = videoHeight;
+
+    if (presetInfo.aspectRatio !== null) {
+      const targetRatio = presetInfo.aspectRatio;
+      const currentRatio = videoWidth / videoHeight;
+
+      if (currentRatio > targetRatio) {
+        baseWidth = Math.round(videoHeight * targetRatio);
+        baseHeight = videoHeight;
+      } else {
+        baseWidth = videoWidth;
+        baseHeight = Math.round(videoWidth / targetRatio);
+      }
+    }
+
+    // Apply zoom
+    const scale = newZoom / 100;
+    const newWidth = Math.round(baseWidth * scale);
+    const newHeight = Math.round(baseHeight * scale);
+
+    // Ensure minimum size
+    const finalWidth = Math.max(100, Math.min(newWidth, videoWidth));
+    const finalHeight = Math.max(100, Math.min(newHeight, videoHeight));
+
+    // Adjust position to keep crop within bounds
+    const maxX = videoWidth - finalWidth;
+    const maxY = videoHeight - finalHeight;
+    const newX = Math.max(0, Math.min(localX, maxX));
+    const newY = Math.max(0, Math.min(localY, maxY));
+
+    setLocalX(newX);
+    setLocalY(newY);
+    setLocalWidth(finalWidth);
+    setLocalHeight(finalHeight);
+    setZoom(newZoom);
+
+    onChange({
+      ...config,
+      x: newX,
+      y: newY,
+      width: finalWidth,
+      height: finalHeight,
+    });
+  }, [config, videoWidth, videoHeight, localX, localY, onChange]);
 
   useEffect(() => {
     setLocalX(config.x);
@@ -128,6 +190,7 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
     setLocalY(0);
     setLocalWidth(videoWidth);
     setLocalHeight(videoHeight);
+    setZoom(100);
     onChange({
       enabled: false,
       preset: null,
@@ -378,6 +441,63 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
                   cursor: 'pointer',
                 }}
               />
+            </div>
+          </div>
+
+          {/* Zoom/Scale Control */}
+          <div style={{
+            background: colors.card,
+            borderRadius: '10px',
+            padding: '14px',
+            marginBottom: '12px',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px',
+            }}>
+              <FiZoomIn size={16} color={colors.accent} />
+              <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
+                Tamaño del recorte
+              </span>
+              <span style={{
+                color: colors.accent,
+                fontSize: '11px',
+                marginLeft: 'auto',
+                fontFamily: 'monospace',
+              }}>
+                {zoom}%
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min={20}
+              max={100}
+              value={zoom}
+              onChange={(e) => handleZoomChange(parseInt(e.target.value))}
+              style={{
+                width: '100%',
+                height: '8px',
+                WebkitAppearance: 'none',
+                appearance: 'none',
+                background: `linear-gradient(to right, ${colors.accent} 0%, ${colors.accent} ${(zoom - 20) / 80 * 100}%, ${colors.border} ${(zoom - 20) / 80 * 100}%, ${colors.border} 100%)`,
+                borderRadius: '4px',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            />
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginTop: '8px',
+              fontSize: '10px',
+              color: colors.textMuted,
+            }}>
+              <span>🔍 Más zoom</span>
+              <span>Tamaño completo</span>
             </div>
           </div>
 

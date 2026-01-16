@@ -756,8 +756,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       });
 
       // Get confirmed face signatures for matching during blur
+      // IMPORTANT: Only include faces explicitly confirmed by user (confirmed === true)
       const confirmedSignatures = (blurConfig.confirmedFaces || [])
-        .filter(f => f.confirmed !== false)
+        .filter(f => f.confirmed === true)
         .map(f => f.signature);
 
       const op = await apiClient.exportProject(project.id, {
@@ -1387,6 +1388,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                         videoId={videoId}
                         activeClipsWithBlur={Object.values(clipBlurZones).filter(z => z.enabled).length}
                         totalClips={segments.length}
+                        segments={segments
+                          .filter(s => s.end !== undefined)
+                          .map(s => ({ start: s.start, end: s.end! }))}
                       />
                     </div>
 

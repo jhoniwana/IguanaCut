@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Robust Face Detection with Landmark Verification
+Robust Face Detection and Blur with DeepSORT Tracking
 
-This implementation uses multiple layers of validation to minimize false positives:
-1. OpenCV FaceDetectorYN (ONNX model) - provides facial landmarks
-2. Landmark geometry verification (eyes above nose, mouth below, etc.)
-3. Strict confidence thresholds
-4. Skin tone verification
-5. Temporal consistency filtering
-6. Face signature matching for stable tracking
+Uses DeepSORT for consistent multi-face tracking across video frames.
+This solves the problem of faces being detected intermittently.
+
+Key improvements over optical flow:
+- Kalman filter for motion prediction
+- Deep learning embeddings for appearance matching
+- Consistent track IDs across frames
+- Handles occlusion and reappearance
 
 Supports multiple blur styles:
 - pixelate: Classic mosaic effect
@@ -17,10 +18,6 @@ Supports multiple blur styles:
 - box: Black rectangle
 - emoji: Emoji overlay
 - image: Custom image overlay
-
-Based on research:
-- FaceDetectorYN: https://docs.opencv.org/4.x/df/d20/classcv_1_1FaceDetectorYN.html
-- Landmark verification reduces false positives by 80%+
 """
 
 import argparse
@@ -29,7 +26,8 @@ import sys
 import os
 import subprocess
 import base64
-import io
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 try:
     import cv2
@@ -37,6 +35,36 @@ try:
 except ImportError:
     print(json.dumps({"error": "OpenCV not installed. Run: pip install opencv-python-headless numpy"}))
     sys.exit(1)
+
+# Performance settings
+DETECTION_SCALE = 0.5  # Scale factor for detection (0.5 = half resolution)
+DETECT_EVERY_N_FRAMES = 5  # Only run full detection every N frames (saves CPU)
+INSIGHTFACE_DETECT_INTERVAL = 8  # InsightFace is heavy, run less frequently
+MAX_WORKERS = 4  # Thread pool size for parallel blur
+
+# Try to import InsightFace (preferred for consistent detection)
+INSIGHTFACE_AVAILABLE = False
+try:
+    from insightface.app import FaceAnalysis
+    INSIGHTFACE_AVAILABLE = True
+except ImportError:
+    pass
+
+# Try to import DeepSORT
+DEEPSORT_AVAILABLE = False
+try:
+    from deep_sort_realtime.deepsort_tracker import DeepSort
+    DEEPSORT_AVAILABLE = True
+except ImportError:
+    print(json.dumps({"warning": "DeepSORT not available, using fallback tracker"}))
+
+# Try to import MediaPipe
+MEDIAPIPE_AVAILABLE = False
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    pass
 
 # Try to import PIL for emoji/image support
 PIL_AVAILABLE = False
@@ -46,60 +74,96 @@ try:
 except ImportError:
     pass
 
-# Check for dlib (more accurate but optional)
-DLIB_AVAILABLE = False
-try:
-    import dlib
-    DLIB_AVAILABLE = True
-except ImportError:
-    pass
 
-# Lucas-Kanade optical flow parameters
-LK_PARAMS = dict(
-    winSize=(21, 21),
-    maxLevel=3,
-    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01)
-)
-
-# Feature detection parameters
-FEATURE_PARAMS = dict(
-    maxCorners=50,
-    qualityLevel=0.05,
-    minDistance=5,
-    blockSize=5
-)
+# Global InsightFace app instance (cached for performance)
+_INSIGHTFACE_APP = None
 
 
-class RobustFaceDetector:
-    """
-    Multi-layer face detector with strict validation.
-    Uses FaceDetectorYN with landmarks, or falls back to DNN.
-    """
+class InsightFaceDetector:
+    """Face detector using InsightFace (SCRFD + ArcFace) for consistent detection."""
 
     def __init__(self, confidence=0.5):
-        self.confidence = max(0.6, confidence)  # Minimum 60% confidence
-        self.net = None
+        global _INSIGHTFACE_APP
+        self.confidence = confidence
+        self.app = None
+
+        if not INSIGHTFACE_AVAILABLE:
+            return
+
+        try:
+            # Reuse cached instance for performance
+            if _INSIGHTFACE_APP is not None:
+                self.app = _INSIGHTFACE_APP
+                return
+
+            model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "insightface")
+            os.makedirs(model_dir, exist_ok=True)
+            os.environ['INSIGHTFACE_HOME'] = model_dir
+
+            self.app = FaceAnalysis(
+                name='buffalo_l',
+                providers=['CPUExecutionProvider']
+            )
+            self.app.prepare(ctx_id=-1, det_size=(640, 640), det_thresh=confidence)
+            _INSIGHTFACE_APP = self.app
+            print(json.dumps({"detector": "InsightFace (SCRFD + ArcFace)"}))
+            sys.stdout.flush()
+        except Exception as e:
+            print(json.dumps({"warning": f"InsightFace init failed: {e}"}))
+            sys.stdout.flush()
+            self.app = None
+
+    def detect(self, frame):
+        """Detect faces and return list of (x, y, w, h, confidence, embedding)."""
+        if self.app is None:
+            return []
+
+        try:
+            faces = self.app.get(frame)
+            results = []
+
+            for face in faces:
+                bbox = face.bbox.astype(int)
+                x1, y1, x2, y2 = bbox
+                w, h = x2 - x1, y2 - y1
+                conf = float(face.det_score) if hasattr(face, 'det_score') else 0.9
+                embedding = [float(v) for v in face.embedding] if face.embedding is not None else None
+
+                if w > 30 and h > 30:
+                    results.append((int(x1), int(y1), int(w), int(h), conf, embedding))
+
+            return results
+        except Exception as e:
+            return []
+
+    def close(self):
+        pass  # Keep cached instance
+
+
+class FaceDetector:
+    """Multi-method face detector combining MediaPipe + YuNet for best coverage.
+
+    Optimizations:
+    - Detects on scaled-down frames for speed
+    - Scales coordinates back to original resolution
+    """
+
+    def __init__(self, confidence=0.5, scale=DETECTION_SCALE):
+        self.confidence = confidence
+        self.scale = scale  # Detection scale factor
+        self.mp_face_detection = None
         self.face_detector_yn = None
-        self.dlib_detector = None
-        self.input_size = (320, 320)
-
-        # Temporal filtering
-        self.recent_detections = []
-        self.frame_idx = 0
-        self.detection_history = {}  # position_key -> count
-
+        self.net = None
         self._init_detector()
 
     def _init_detector(self):
-        """Initialize face detector - prefer FaceDetectorYN, fallback to DNN."""
+        """Initialize face detectors - prefer YuNet, fallback to MediaPipe/DNN."""
         model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         os.makedirs(model_dir, exist_ok=True)
 
-        # Try to use FaceDetectorYN (better, provides landmarks)
+        # Try YuNet first (best for landmarks validation)
         yn_model_path = os.path.join(model_dir, "face_detection_yunet_2023mar.onnx")
-
         if not os.path.exists(yn_model_path):
-            # Download YuNet model
             YN_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
             try:
                 import urllib.request
@@ -108,39 +172,39 @@ class RobustFaceDetector:
                 urllib.request.urlretrieve(YN_URL, yn_model_path)
             except Exception as e:
                 print(json.dumps({"warning": f"Could not download YuNet model: {e}"}))
-                sys.stdout.flush()
 
         if os.path.exists(yn_model_path):
             try:
                 self.face_detector_yn = cv2.FaceDetectorYN.create(
-                    yn_model_path,
-                    "",
-                    self.input_size,
+                    yn_model_path, "", (320, 320),
                     score_threshold=self.confidence,
                     nms_threshold=0.3,
-                    top_k=5
+                    top_k=10
                 )
-                print(json.dumps({"detector": "FaceDetectorYN (with landmarks)"}))
+                print(json.dumps({"detector": "YuNet (with landmarks)"}))
                 sys.stdout.flush()
-                return
             except Exception as e:
-                print(json.dumps({"warning": f"FaceDetectorYN init failed: {e}"}))
-                sys.stdout.flush()
+                print(json.dumps({"warning": f"YuNet init failed: {e}"}))
 
-        # Fallback to DNN
-        self._init_dnn(model_dir)
-
-        # Also try dlib for secondary verification
-        if DLIB_AVAILABLE:
+        # Also initialize MediaPipe as backup
+        if MEDIAPIPE_AVAILABLE:
             try:
-                self.dlib_detector = dlib.get_frontal_face_detector()
-                print(json.dumps({"secondary_detector": "dlib HOG"}))
-                sys.stdout.flush()
-            except:
-                pass
+                self.mp_face_detection = mp.solutions.face_detection.FaceDetection(
+                    model_selection=1,
+                    min_detection_confidence=self.confidence
+                )
+                if not self.face_detector_yn:
+                    print(json.dumps({"detector": "MediaPipe"}))
+                    sys.stdout.flush()
+            except Exception as e:
+                print(json.dumps({"warning": f"MediaPipe init failed: {e}"}))
+
+        # DNN fallback
+        if not self.face_detector_yn and not self.mp_face_detection:
+            self._init_dnn(model_dir)
 
     def _init_dnn(self, model_dir):
-        """Initialize OpenCV DNN detector."""
+        """Initialize OpenCV DNN face detector as last resort."""
         model_path = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
         config_path = os.path.join(model_dir, "deploy.prototxt")
 
@@ -154,564 +218,280 @@ class RobustFaceDetector:
             urllib.request.urlretrieve(CONFIG_URL, config_path)
 
         self.net = cv2.dnn.readNetFromCaffe(config_path, model_path)
-        print(json.dumps({"detector": "OpenCV DNN SSD"}))
+        print(json.dumps({"detector": "OpenCV DNN"}))
         sys.stdout.flush()
 
     def detect(self, frame):
-        """Detect faces with multiple validation layers."""
-        self.frame_idx += 1
-        h, w = frame.shape[:2]
+        """Detect faces and return list of (x, y, w, h, confidence).
 
-        # Use FaceDetectorYN if available
-        if self.face_detector_yn is not None:
-            return self._detect_with_yn(frame)
+        Uses scaled detection for performance, then scales coordinates back.
+        """
+        orig_h, orig_w = frame.shape[:2]
+
+        # Scale down for faster detection if scale < 1
+        if self.scale < 1.0:
+            scaled_frame = cv2.resize(frame, None, fx=self.scale, fy=self.scale,
+                                      interpolation=cv2.INTER_LINEAR)
+            h, w = scaled_frame.shape[:2]
+            detect_frame = scaled_frame
         else:
-            return self._detect_with_dnn(frame)
+            h, w = orig_h, orig_w
+            detect_frame = frame
 
-    def _detect_with_yn(self, frame):
-        """
-        Detect faces using FaceDetectorYN with landmark verification.
-        YuNet provides: [x, y, w, h, x_re, y_re, x_le, y_le, x_nose, y_nose, x_mouth_r, y_mouth_r, x_mouth_l, y_mouth_l, score]
-        """
-        h, w = frame.shape[:2]
+        all_detections = []
 
-        # Resize for detection
-        self.face_detector_yn.setInputSize((w, h))
+        # YuNet detection (preferred - has landmarks for validation)
+        if self.face_detector_yn is not None:
+            self.face_detector_yn.setInputSize((w, h))
+            _, faces = self.face_detector_yn.detect(detect_frame)
 
-        _, faces = self.face_detector_yn.detect(frame)
+            if faces is not None:
+                for face in faces:
+                    x, y, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+                    conf = float(face[14])
 
-        if faces is None:
-            self._update_history([])
-            return []
+                    # Validate landmarks
+                    if self._validate_landmarks(face, x, y, fw, fh):
+                        x = max(0, x)
+                        y = max(0, y)
+                        fw = min(fw, w - x)
+                        fh = min(fh, h - y)
+                        if fw > 30 and fh > 30:
+                            all_detections.append((x, y, fw, fh, conf))
 
-        candidates = []
-        for face in faces:
-            # Extract bbox and landmarks
-            x, y, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
-            confidence = face[14]
+        # MediaPipe detection (good for different angles)
+        if self.mp_face_detection is not None:
+            rgb_frame = cv2.cvtColor(detect_frame, cv2.COLOR_BGR2RGB)
+            results = self.mp_face_detection.process(rgb_frame)
 
-            # Clamp to bounds
-            x = max(0, x)
-            y = max(0, y)
-            fw = min(fw, w - x)
-            fh = min(fh, h - y)
+            if results.detections:
+                for detection in results.detections:
+                    bbox = detection.location_data.relative_bounding_box
+                    conf = detection.score[0]
 
-            if fw < 30 or fh < 30:
-                continue
+                    x = int(bbox.xmin * w)
+                    y = int(bbox.ymin * h)
+                    fw = int(bbox.width * w)
+                    fh = int(bbox.height * h)
 
-            # Extract landmarks
-            landmarks = {
-                'right_eye': (face[4], face[5]),
-                'left_eye': (face[6], face[7]),
-                'nose': (face[8], face[9]),
-                'mouth_right': (face[10], face[11]),
-                'mouth_left': (face[12], face[13])
-            }
+                    x = max(0, x)
+                    y = max(0, y)
+                    fw = min(fw, w - x)
+                    fh = min(fh, h - y)
 
-            # CRITICAL: Validate face geometry using landmarks
-            if not self._validate_landmarks(landmarks, x, y, fw, fh, h, w):
-                continue
+                    if fw > 30 and fh > 30:
+                        # Check if not duplicate
+                        is_dup = False
+                        for dx, dy, dw, dh, dc in all_detections:
+                            if self._iou((x, y, fw, fh), (dx, dy, dw, dh)) > 0.5:
+                                is_dup = True
+                                break
+                        if not is_dup:
+                            all_detections.append((x, y, fw, fh, float(conf)))
 
-            # Additional validation
-            if not self._validate_face(frame, x, y, fw, fh, confidence):
-                continue
+        # DNN fallback
+        if len(all_detections) == 0 and self.net is not None:
+            blob = cv2.dnn.blobFromImage(cv2.resize(detect_frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
+            self.net.setInput(blob)
+            detections = self.net.forward()
 
-            candidates.append((x, y, fw, fh, confidence))
+            for i in range(detections.shape[2]):
+                conf = detections[0, 0, i, 2]
+                if conf > self.confidence:
+                    box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                    x1, y1, x2, y2 = box.astype(int)
+                    all_detections.append((x1, y1, x2 - x1, y2 - y1, float(conf)))
 
-        # Apply temporal consistency
-        faces = self._temporal_filter(candidates)
-        self._update_history(candidates)
+        # Scale coordinates back to original resolution
+        if self.scale < 1.0 and len(all_detections) > 0:
+            scale_inv = 1.0 / self.scale
+            scaled_detections = []
+            for (x, y, fw, fh, conf) in all_detections:
+                sx = int(x * scale_inv)
+                sy = int(y * scale_inv)
+                sw = int(fw * scale_inv)
+                sh = int(fh * scale_inv)
+                # Clamp to original bounds
+                sx = max(0, min(sx, orig_w - 1))
+                sy = max(0, min(sy, orig_h - 1))
+                sw = min(sw, orig_w - sx)
+                sh = min(sh, orig_h - sy)
+                if sw > 20 and sh > 20:
+                    scaled_detections.append((sx, sy, sw, sh, conf))
+            return scaled_detections
 
-        return faces
+        return all_detections
 
-    def _validate_landmarks(self, lm, x, y, w, h, frame_h, frame_w):
-        """
-        Validate that landmarks form a proper face geometry.
-        This is the KEY to reducing false positives.
+    def _validate_landmarks(self, face, x, y, w, h):
+        """Validate face geometry using YuNet landmarks.
+
+        Strict validation to reduce false positives.
         """
         try:
-            re = lm['right_eye']
-            le = lm['left_eye']
-            nose = lm['nose']
-            mr = lm['mouth_right']
-            ml = lm['mouth_left']
+            re = (face[4], face[5])  # right eye
+            le = (face[6], face[7])  # left eye
+            nose = (face[8], face[9])
+            mr = (face[10], face[11])  # mouth right
+            ml = (face[12], face[13])  # mouth left
 
-            # 1. Eyes should be above the nose
+            # 1. Eyes must be above nose
             eye_y = (re[1] + le[1]) / 2
             if eye_y >= nose[1]:
                 return False
 
-            # 2. Nose should be above the mouth
+            # 2. Nose must be above mouth
             mouth_y = (mr[1] + ml[1]) / 2
             if nose[1] >= mouth_y:
                 return False
 
-            # 3. Eyes should be roughly on same horizontal line (within 25% of face height)
-            eye_diff_y = abs(re[1] - le[1])
-            if eye_diff_y > h * 0.25:
+            # 3. Eyes roughly on same horizontal level
+            if abs(re[1] - le[1]) > h * 0.25:
                 return False
 
-            # 4. Left eye should be on the left, right eye on the right (from viewer's perspective)
-            if le[0] <= re[0]:  # Swapped eyes indicate wrong detection
+            # 4. Eye distance should be reasonable
+            eye_dist = abs(re[0] - le[0])
+            if eye_dist < w * 0.2 or eye_dist > w * 0.7:
                 return False
 
-            # 5. Mouth corners should be roughly on same level
-            mouth_diff_y = abs(mr[1] - ml[1])
-            if mouth_diff_y > h * 0.2:
+            # 5. Nose should be between the eyes horizontally
+            eye_center_x = (re[0] + le[0]) / 2
+            if abs(nose[0] - eye_center_x) > w * 0.25:
                 return False
 
-            # 6. Face width/height from landmarks should match bbox
-            eye_dist = abs(le[0] - re[0])
-            if eye_dist < w * 0.2 or eye_dist > w * 0.8:
-                return False
+            # 6. All landmarks should be within bounding box
+            margin = 0.1
+            x_min, x_max = x - w * margin, x + w * (1 + margin)
+            y_min, y_max = y - h * margin, y + h * (1 + margin)
 
-            # 7. Nose should be between the eyes horizontally
-            if nose[0] < min(re[0], le[0]) or nose[0] > max(re[0], le[0]):
-                return False
-
-            # 8. All landmarks should be within the bounding box (with margin)
-            margin = max(w, h) * 0.1
-            for name, (lx, ly) in lm.items():
-                if lx < x - margin or lx > x + w + margin:
-                    return False
-                if ly < y - margin or ly > y + h + margin:
+            for lm in [re, le, nose, mr, ml]:
+                if not (x_min <= lm[0] <= x_max and y_min <= lm[1] <= y_max):
                     return False
 
-            return True
-
-        except Exception:
-            return False
-
-    def _detect_with_dnn(self, frame):
-        """Detect using OpenCV DNN with strict validation."""
-        h, w = frame.shape[:2]
-
-        blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
-        self.net.setInput(blob)
-        detections = self.net.forward()
-
-        candidates = []
-        for i in range(detections.shape[2]):
-            conf = detections[0, 0, i, 2]
-            if conf > self.confidence:
-                box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
-                x1, y1, x2, y2 = box.astype(int)
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(w, x2), min(h, y2)
-                fw, fh = x2 - x1, y2 - y1
-
-                if self._validate_face(frame, x1, y1, fw, fh, conf):
-                    # Secondary check with dlib if available
-                    if self.dlib_detector is not None:
-                        if not self._verify_with_dlib(frame, x1, y1, fw, fh):
-                            continue
-                    candidates.append((x1, y1, fw, fh, conf))
-
-        faces = self._temporal_filter(candidates)
-        self._update_history(candidates)
-        return faces
-
-    def _verify_with_dlib(self, frame, x, y, w, h):
-        """Use dlib as secondary verification - very few false positives."""
-        try:
-            # Check a slightly expanded region
-            pad = int(min(w, h) * 0.2)
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(frame.shape[1], x + w + pad)
-            y2 = min(frame.shape[0], y + h + pad)
-
-            roi = frame[y1:y2, x1:x2]
-            if roi.size == 0:
+            # 7. Face aspect ratio check
+            aspect = w / h if h > 0 else 0
+            if aspect < 0.5 or aspect > 1.8:
                 return False
 
-            # Convert to grayscale for dlib
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-            # Detect faces with dlib
-            dlib_faces = self.dlib_detector(gray, 0)
-
-            # If dlib finds any face in this region, it's probably real
-            return len(dlib_faces) > 0
-
-        except Exception:
-            return True  # If dlib fails, allow the detection
-
-    def _validate_face(self, frame, x, y, w, h, confidence):
-        """Additional validation checks."""
-        frame_h, frame_w = frame.shape[:2]
-
-        # Size checks
-        if w < 40 or h < 40:
-            return False
-        if w > frame_w * 0.75 or h > frame_h * 0.75:
-            return False
-
-        # Aspect ratio (faces are roughly square)
-        aspect = w / h if h > 0 else 0
-        if aspect < 0.65 or aspect > 1.5:
-            return False
-
-        # Position check
-        cx, cy = x + w/2, y + h/2
-        if cx < frame_w * 0.03 or cx > frame_w * 0.97:
-            return False
-        if cy < frame_h * 0.02 or cy > frame_h * 0.98:
-            return False
-
-        # Skin tone check
-        if not self._has_skin_tones(frame, x, y, w, h):
-            return False
-
-        # Higher confidence for smaller faces
-        min_dim = min(w, h)
-        if min_dim < 50 and confidence < 0.95:
-            return False
-        if min_dim < 70 and confidence < 0.90:
-            return False
-        if min_dim < 100 and confidence < 0.87:
-            return False
-
-        return True
-
-    def _has_skin_tones(self, frame, x, y, w, h):
-        """Check for skin-like colors."""
-        try:
-            roi = frame[y:y+h, x:x+w]
-            if roi.size == 0:
+            # 8. Mouth width should be reasonable
+            mouth_width = abs(mr[0] - ml[0])
+            if mouth_width < w * 0.15 or mouth_width > w * 0.8:
                 return False
 
-            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-
-            # Multiple skin tone ranges
-            lower_skin1 = np.array([0, 25, 60], dtype=np.uint8)
-            upper_skin1 = np.array([25, 255, 255], dtype=np.uint8)
-
-            lower_skin2 = np.array([0, 10, 100], dtype=np.uint8)
-            upper_skin2 = np.array([20, 150, 255], dtype=np.uint8)
-
-            mask1 = cv2.inRange(hsv, lower_skin1, upper_skin1)
-            mask2 = cv2.inRange(hsv, lower_skin2, upper_skin2)
-            mask = cv2.bitwise_or(mask1, mask2)
-
-            skin_ratio = np.sum(mask > 0) / mask.size
-            return skin_ratio > 0.20  # At least 20% skin
-
-        except Exception:
             return True
-
-    def _temporal_filter(self, candidates):
-        """Require consistent detection across frames."""
-        self.recent_detections.append((self.frame_idx, candidates))
-        self.recent_detections = [
-            (idx, dets) for idx, dets in self.recent_detections
-            if self.frame_idx - idx < 8  # Keep 8 frames history
-        ]
-
-        # Be more lenient - return faces that pass basic validation
-        if len(self.recent_detections) < 2:
-            # First frames - return high confidence faces
-            return [(x, y, w, h) for x, y, w, h, conf in candidates if conf > 0.7]
-
-        confirmed = []
-        for x, y, w, h, conf in candidates:
-            similar_count = 0
-            for frame_idx, past_dets in self.recent_detections[:-1]:
-                for px, py, pw, ph, pconf in past_dets:
-                    cx, cy = x + w/2, y + h/2
-                    pcx, pcy = px + pw/2, py + ph/2
-                    dist = np.sqrt((cx - pcx)**2 + (cy - pcy)**2)
-                    threshold = max(w, h) * 0.6  # Slightly larger threshold
-                    if dist < threshold:
-                        similar_count += 1
-                        break
-
-            # Require detection in at least 1 recent frame or good confidence
-            if similar_count >= 1 or conf > 0.75:
-                confirmed.append((x, y, w, h))
-
-        return confirmed
-
-    def _update_history(self, candidates):
-        """Update detection position history."""
-        # Decay old entries
-        keys_to_remove = []
-        for key in self.detection_history:
-            self.detection_history[key] -= 1
-            if self.detection_history[key] <= 0:
-                keys_to_remove.append(key)
-        for key in keys_to_remove:
-            del self.detection_history[key]
-
-        # Add new detections
-        for x, y, w, h, conf in candidates:
-            key = f"{int(x/50)}_{int(y/50)}"  # Grid position
-            self.detection_history[key] = self.detection_history.get(key, 0) + 2
-
-    def close(self):
-        pass
-
-
-class FaceSignature:
-    """Face signature for identity matching."""
-
-    def __init__(self, face_roi_bgr):
-        self.hist_hsv = None
-        self.hist_gray = None
-        self._compute_signature(face_roi_bgr)
-
-    def _compute_signature(self, face_roi):
-        if face_roi is None or face_roi.size == 0:
-            return
-        try:
-            face_resized = cv2.resize(face_roi, (64, 64))
-            hsv = cv2.cvtColor(face_resized, cv2.COLOR_BGR2HSV)
-            self.hist_hsv = cv2.calcHist([hsv], [0, 1], None, [30, 32], [0, 180, 0, 256])
-            cv2.normalize(self.hist_hsv, self.hist_hsv, 0, 1, cv2.NORM_MINMAX)
-            gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
-            self.hist_gray = cv2.calcHist([gray], [0], None, [64], [0, 256])
-            cv2.normalize(self.hist_gray, self.hist_gray, 0, 1, cv2.NORM_MINMAX)
-        except Exception:
-            pass
-
-    def compare(self, other):
-        if self.hist_hsv is None or other.hist_hsv is None:
-            return 1.0
-        try:
-            dist_hsv = cv2.compareHist(self.hist_hsv, other.hist_hsv, cv2.HISTCMP_BHATTACHARYYA)
-            dist_gray = cv2.compareHist(self.hist_gray, other.hist_gray, cv2.HISTCMP_BHATTACHARYYA)
-            return 0.7 * dist_hsv + 0.3 * dist_gray
         except:
-            return 1.0
+            return False  # Reject on error (safer)
 
-    def update(self, face_roi_bgr, blend=0.3):
-        if face_roi_bgr is None or face_roi_bgr.size == 0:
-            return
-        new_sig = FaceSignature(face_roi_bgr)
-        if new_sig.hist_hsv is None:
-            return
-        if self.hist_hsv is None:
-            self.hist_hsv = new_sig.hist_hsv
-            self.hist_gray = new_sig.hist_gray
-        else:
-            self.hist_hsv = blend * new_sig.hist_hsv + (1 - blend) * self.hist_hsv
-            self.hist_gray = blend * new_sig.hist_gray + (1 - blend) * self.hist_gray
+    def _iou(self, box1, box2):
+        """Calculate Intersection over Union."""
+        x1, y1, w1, h1 = box1
+        x2, y2, w2, h2 = box2
 
+        xi1 = max(x1, x2)
+        yi1 = max(y1, y2)
+        xi2 = min(x1 + w1, x2 + w2)
+        yi2 = min(y1 + h1, y2 + h2)
 
-class TrackedFace:
-    """Face with cloud tracking."""
-
-    def __init__(self, face_id, bbox, gray, color, force_confirmed=False):
-        self.id = face_id
-        self.bbox = list(bbox)
-        self.points = None
-        self.prev_gray = None
-        self.frames_lost = 0
-        self.detection_count = 1
-        self.is_confirmed = force_confirmed  # If user confirmed, blur from frame 0
-        self.is_valid = True
-
-        roi = self._get_roi(color, bbox)
-        self.signature = FaceSignature(roi)
-        self._init_features(gray, bbox)
-
-    def _get_roi(self, frame, bbox):
-        x, y, w, h = [int(v) for v in bbox]
-        x1, y1 = max(0, x), max(0, y)
-        x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
-        if x2 > x1 and y2 > y1:
-            return frame[y1:y2, x1:x2].copy()
-        return None
-
-    def _init_features(self, gray, bbox):
-        x, y, w, h = [int(v) for v in bbox]
-        pad = int(min(w, h) * 0.1)
-        x1, y1 = max(0, x - pad), max(0, y - pad)
-        x2, y2 = min(gray.shape[1], x + w + pad), min(gray.shape[0], y + h + pad)
-
-        roi = gray[y1:y2, x1:x2]
-        if roi.size == 0:
-            self.is_valid = False
-            return
-
-        points = cv2.goodFeaturesToTrack(roi, mask=None, **FEATURE_PARAMS)
-        if points is None or len(points) < 5:
-            params = FEATURE_PARAMS.copy()
-            params['qualityLevel'] = 0.01
-            params['maxCorners'] = 100
-            points = cv2.goodFeaturesToTrack(roi, mask=None, **params)
-
-        if points is None or len(points) < 3:
-            self.is_valid = False
-            return
-
-        self.points = points.reshape(-1, 2) + np.array([x1, y1])
-        self.points = self.points.reshape(-1, 1, 2).astype(np.float32)
-        self.prev_gray = gray.copy()
-
-    def track(self, gray):
-        if not self.is_valid or self.points is None or len(self.points) < 3:
-            return False
-
-        p1, st1, _ = cv2.calcOpticalFlowPyrLK(self.prev_gray, gray, self.points, None, **LK_PARAMS)
-        if p1 is None:
-            return False
-
-        p0r, st2, _ = cv2.calcOpticalFlowPyrLK(gray, self.prev_gray, p1, None, **LK_PARAMS)
-        if p0r is None:
-            return False
-
-        fb_error = np.abs(self.points - p0r).reshape(-1, 2).max(axis=1)
-        valid = (st1.flatten() == 1) & (st2.flatten() == 1) & (fb_error < 2.0)
-
-        if np.sum(valid) < 3:
-            return False
-
-        old_pts = self.points[valid].reshape(-1, 2)
-        new_pts = p1[valid].reshape(-1, 2)
-        motion = np.median(new_pts - old_pts, axis=0)
-
-        self.bbox[0] += motion[0]
-        self.bbox[1] += motion[1]
-        self.points = p1[valid].reshape(-1, 1, 2).astype(np.float32)
-        self.prev_gray = gray.copy()
-
-        return True
-
-    def update(self, bbox, gray, color, min_conf=3):
-        self.detection_count += 1
-        if self.detection_count >= min_conf:
-            self.is_confirmed = True
-
-        alpha = 0.6
-        self.bbox[0] = alpha * bbox[0] + (1 - alpha) * self.bbox[0]
-        self.bbox[1] = alpha * bbox[1] + (1 - alpha) * self.bbox[1]
-        self.bbox[2] = alpha * bbox[2] + (1 - alpha) * self.bbox[2]
-        self.bbox[3] = alpha * bbox[3] + (1 - alpha) * self.bbox[3]
-
-        roi = self._get_roi(color, self.bbox)
-        if roi is not None:
-            self.signature.update(roi)
-
-        self._init_features(gray, self.bbox)
-        self.frames_lost = 0
-
-    def get_bbox(self):
-        return tuple(int(v) for v in self.bbox)
-
-
-class FaceTracker:
-    """Multi-face tracker with signature matching."""
-
-    def __init__(self, detector, detect_every=8, max_lost=20):
-        self.detector = detector
-        self.detect_every = detect_every
-        self.max_lost = max_lost
-        self.faces = {}
-        self.next_id = 0
-        self.frame_num = 0
-        self.min_confirmations = 2  # Require 2 detections before blur (lowered for short clips)
-        self.confirmed_signatures = None  # User-confirmed face signatures
-        self.user_confirmed_faces = False  # If true, user already confirmed faces exist
-
-    def update(self, frame):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        self.frame_num += 1
-
-        do_detect = (
-            self.frame_num % self.detect_every == 0 or
-            len(self.faces) == 0 or
-            self.frame_num <= 5
-        )
-
-        # Track existing faces
-        for fid in list(self.faces.keys()):
-            face = self.faces[fid]
-            if face.is_valid and face.prev_gray is not None:
-                if not face.track(gray):
-                    face.is_valid = False
-            face.frames_lost += 1
-
-        # Detect faces
-        if do_detect:
-            detected = self.detector.detect(frame)
-            matched = set()
-
-            for det in detected:
-                x, y, w, h = det
-                det_roi = frame[max(0,y):min(frame.shape[0],y+h), max(0,x):min(frame.shape[1],x+w)]
-                det_sig = FaceSignature(det_roi) if det_roi.size > 0 else None
-
-                best_id = None
-                best_score = 0
-
-                for fid, face in self.faces.items():
-                    if fid in matched:
-                        continue
-
-                    iou = self._iou(det, face.get_bbox())
-                    sig_match = 1.0
-                    if det_sig and det_sig.hist_hsv is not None:
-                        sig_match = 1.0 - face.signature.compare(det_sig)
-
-                    score = 0.4 * iou + 0.6 * sig_match
-                    if iou > 0.15 and sig_match > 0.4 and score > best_score:
-                        best_score = score
-                        best_id = fid
-
-                if best_id is not None:
-                    self.faces[best_id].update(det, gray, frame, self.min_confirmations)
-                    matched.add(best_id)
-                else:
-                    # If user already confirmed faces, new faces are immediately confirmed
-                    # This ensures blur starts from frame 0
-                    force_confirmed = self.user_confirmed_faces
-                    new_face = TrackedFace(self.next_id, det, gray, frame, force_confirmed)
-                    if new_face.is_valid:
-                        self.faces[self.next_id] = new_face
-                        matched.add(self.next_id)
-                        self.next_id += 1
-
-        # Collect and cleanup
-        to_blur = []
-        stale = []
-        for fid, face in self.faces.items():
-            if face.frames_lost > self.max_lost or not face.is_valid:
-                stale.append(fid)
-            elif face.is_confirmed:
-                # If user confirmed ANY faces, blur all detected faces
-                # (the confirmation step already filtered false positives)
-                to_blur.append(face.get_bbox())
-
-        for fid in stale:
-            del self.faces[fid]
-
-        return to_blur
-
-    def _iou(self, b1, b2):
-        x1, y1, w1, h1 = b1
-        x2, y2, w2, h2 = b2
-        xi1, yi1 = max(x1, x2), max(y1, y2)
-        xi2, yi2 = min(x1 + w1, x2 + w2), min(y1 + h1, y2 + h2)
         inter = max(0, xi2 - xi1) * max(0, yi2 - yi1)
         union = w1 * h1 + w2 * h2 - inter
         return inter / union if union > 0 else 0
 
+    def close(self):
+        """Cleanup resources."""
+        if self.mp_face_detection:
+            self.mp_face_detection.close()
+
+
+def compute_signature(face_roi):
+    """Compute face signature for matching with user-confirmed faces.
+
+    Uses HSV histogram (fallback when InsightFace not available during blur).
+    """
+    try:
+        resized = cv2.resize(face_roi, (64, 64))
+        hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
+        hist = cv2.calcHist([hsv], [0, 1], None, [30, 32], [0, 180, 0, 256])
+        cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+        return hist.flatten()
+    except:
+        return None
+
+
+def cosine_similarity(emb1, emb2):
+    """Compute cosine similarity between two embeddings."""
+    try:
+        a = np.array(emb1, dtype=np.float32)
+        b = np.array(emb2, dtype=np.float32)
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10))
+    except:
+        return 0.0
+
+
+def signature_matches(face_sig, confirmed_signatures, threshold=0.35):
+    """Check if detected face matches any user-confirmed signature.
+
+    IMPORTANT:
+    - None = no filter provided, blur all detected faces
+    - Empty list [] = user explicitly deselected all faces, blur nothing
+
+    Supports both:
+    - ArcFace embeddings (512 dims): Uses cosine similarity, threshold > 0.5 = match
+    - HSV histograms (960 dims): Uses Bhattacharyya distance, threshold < 0.35 = match
+    """
+    if confirmed_signatures is None:
+        return True  # No filter provided, blur all faces
+
+    if len(confirmed_signatures) == 0:
+        return False  # User deselected all faces, blur nothing
+
+    if face_sig is None:
+        return False
+
+    # Detect signature type from first confirmed signature
+    first_sig = confirmed_signatures[0]
+    is_arcface = len(first_sig) == 512
+
+    for conf_sig in confirmed_signatures:
+        try:
+            if is_arcface:
+                # ArcFace: cosine similarity > 0.5 = same person
+                sim = cosine_similarity(face_sig, conf_sig)
+                if sim > 0.5:
+                    return True
+            else:
+                # HSV histogram: Bhattacharyya distance < threshold = similar
+                face_flat = np.array(face_sig, dtype=np.float32).reshape(-1, 1)
+                conf_arr = np.array(conf_sig, dtype=np.float32).reshape(-1, 1)
+
+                if face_flat.size == conf_arr.size:
+                    dist = cv2.compareHist(face_flat, conf_arr, cv2.HISTCMP_BHATTACHARYYA)
+                else:
+                    min_size = min(face_flat.size, conf_arr.size)
+                    if min_size >= 64:
+                        dist = cv2.compareHist(face_flat[:min_size], conf_arr[:min_size], cv2.HISTCMP_BHATTACHARYYA)
+                    else:
+                        continue
+
+                if dist < threshold:
+                    return True
+        except:
+            continue
+
+    return False
+
+
+# ============================================
+# Blur Style Functions (unchanged from before)
+# ============================================
 
 def create_oval_mask(h, w, feather=0.15):
     """Create an oval mask with smooth feathered edges."""
     y, x = np.ogrid[:h, :w]
     cx, cy = w / 2, h / 2
     rx, ry = w / 2, h / 2
-
-    # Calculate normalized distance from center (ellipse equation)
     dist = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
-
-    # Create smooth gradient mask
     inner = 1.0 - feather
     mask = np.clip((1.0 - dist) / feather, 0, 1)
     mask = (mask * 255).astype(np.uint8)
-
     return mask
 
 
@@ -720,7 +500,6 @@ def pixelate(image, blocks=10):
     h, w = image.shape[:2]
     blocks = max(5, min(blocks, 20))
 
-    # Create pixelated version
     pixelated = image.copy()
     xSteps = np.linspace(0, w, blocks + 1, dtype=int)
     ySteps = np.linspace(0, h, blocks + 1, dtype=int)
@@ -734,62 +513,45 @@ def pixelate(image, blocks=10):
                 B, G, R = [int(x) for x in cv2.mean(roi)[:3]]
                 cv2.rectangle(pixelated, (sx, sy), (ex, ey), (B, G, R), -1)
 
-    # Apply oval mask with feathered edges
     mask = create_oval_mask(h, w, feather=0.2)
     mask_3ch = cv2.merge([mask, mask, mask])
-
-    # Blend original and pixelated using mask
     result = (pixelated.astype(float) * (mask_3ch / 255.0) +
               image.astype(float) * (1 - mask_3ch / 255.0)).astype(np.uint8)
-
     return result
 
 
 def gaussian_blur(image, intensity=25):
     """Apply Gaussian blur with oval shape and feathered edges."""
     h, w = image.shape[:2]
-
-    # kernel size must be odd
     ksize = int(intensity * 2) | 1
     ksize = max(5, min(ksize, 99))
     blurred = cv2.GaussianBlur(image, (ksize, ksize), 0)
 
-    # Create oval mask with extra smooth feathering
     mask = create_oval_mask(h, w, feather=0.25)
-
-    # Apply additional gaussian blur to mask for smoother edges
     mask = cv2.GaussianBlur(mask, (21, 21), 0)
     mask_3ch = cv2.merge([mask, mask, mask])
 
-    # Blend original and blurred using smooth mask
     result = (blurred.astype(float) * (mask_3ch / 255.0) +
               image.astype(float) * (1 - mask_3ch / 255.0)).astype(np.uint8)
-
     return result
 
 
 def color_fill(image, color_hex='#000000'):
     """Fill image region with a solid color in oval shape."""
     h, w = image.shape[:2]
-    # Parse hex color
     color_hex = color_hex.lstrip('#')
     if len(color_hex) == 6:
         r, g, b = tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
     else:
         r, g, b = 0, 0, 0
 
-    # Create color overlay
-    overlay = np.full_like(image, (b, g, r))  # BGR
-
-    # Apply oval mask with feathered edges
+    overlay = np.full_like(image, (b, g, r))
     mask = create_oval_mask(h, w, feather=0.2)
     mask = cv2.GaussianBlur(mask, (15, 15), 0)
     mask_3ch = cv2.merge([mask, mask, mask])
 
-    # Blend
     result = (overlay.astype(float) * (mask_3ch / 255.0) +
               image.astype(float) * (1 - mask_3ch / 255.0)).astype(np.uint8)
-
     return result
 
 
@@ -797,162 +559,80 @@ def black_box(image):
     """Fill image region with black oval."""
     h, w = image.shape[:2]
     overlay = np.zeros_like(image)
-
-    # Apply oval mask
     mask = create_oval_mask(h, w, feather=0.2)
     mask = cv2.GaussianBlur(mask, (15, 15), 0)
     mask_3ch = cv2.merge([mask, mask, mask])
 
     result = (overlay.astype(float) * (mask_3ch / 255.0) +
               image.astype(float) * (1 - mask_3ch / 255.0)).astype(np.uint8)
-
     return result
 
 
-# Global cache for emoji/image overlays
-_overlay_cache = {}
-
-
-def emoji_overlay(image, emoji='🔥'):
+def emoji_overlay(image, emoji='fire'):
     """Overlay a fun shape/pattern based on emoji selection."""
     h, w = image.shape[:2]
 
-    # Map emojis to fun colored patterns
     emoji_styles = {
-        '🔥': {'color': (0, 100, 255), 'pattern': 'flame'},      # Orange-red flame
-        '💋': {'color': (80, 0, 180), 'pattern': 'lips'},         # Red lips
-        '😈': {'color': (100, 0, 150), 'pattern': 'horns'},       # Purple devil
-        '👅': {'color': (100, 80, 200), 'pattern': 'oval'},       # Pink tongue
-        '🍑': {'color': (140, 160, 255), 'pattern': 'peach'},     # Peach color
-        '🍆': {'color': (100, 50, 120), 'pattern': 'oval'},       # Purple
-        '💦': {'color': (255, 200, 100), 'pattern': 'drops'},     # Light blue
-        '😏': {'color': (50, 50, 50), 'pattern': 'smirk'},        # Dark gray
-        '🥵': {'color': (0, 80, 255), 'pattern': 'hot'},          # Red hot
-        '😘': {'color': (180, 100, 255), 'pattern': 'kiss'},      # Pink kiss
-        '💕': {'color': (180, 100, 255), 'pattern': 'hearts'},    # Pink hearts
-        '❤️‍🔥': {'color': (0, 50, 220), 'pattern': 'flame'},      # Red flame
-        '🌶️': {'color': (0, 50, 200), 'pattern': 'oval'},         # Red pepper
-        '🍒': {'color': (50, 50, 180), 'pattern': 'cherry'},      # Cherry red
-        '🍓': {'color': (80, 80, 220), 'pattern': 'oval'},        # Strawberry
-        '💄': {'color': (50, 0, 180), 'pattern': 'oval'},         # Lipstick red
-        '👙': {'color': (200, 150, 50), 'pattern': 'bikini'},     # Cyan bikini
-        '🩲': {'color': (200, 100, 50), 'pattern': 'oval'},       # Blue
-        '😜': {'color': (0, 200, 255), 'pattern': 'wink'},        # Yellow
-        '🤫': {'color': (180, 150, 200), 'pattern': 'shh'},       # Light pink
+        '🔥': {'color': (0, 100, 255), 'pattern': 'flame'},
+        '💋': {'color': (80, 0, 180), 'pattern': 'lips'},
+        '😈': {'color': (100, 0, 150), 'pattern': 'horns'},
+        '👅': {'color': (100, 80, 200), 'pattern': 'oval'},
+        '🍑': {'color': (140, 160, 255), 'pattern': 'peach'},
+        '🍆': {'color': (100, 50, 120), 'pattern': 'oval'},
+        '💦': {'color': (255, 200, 100), 'pattern': 'drops'},
+        '😏': {'color': (50, 50, 50), 'pattern': 'smirk'},
+        '🥵': {'color': (0, 80, 255), 'pattern': 'hot'},
+        '😘': {'color': (180, 100, 255), 'pattern': 'kiss'},
+        '💕': {'color': (180, 100, 255), 'pattern': 'hearts'},
+        '❤️‍🔥': {'color': (0, 50, 220), 'pattern': 'flame'},
+        '🌶️': {'color': (0, 50, 200), 'pattern': 'oval'},
+        '🍒': {'color': (50, 50, 180), 'pattern': 'cherry'},
+        '🍓': {'color': (80, 80, 220), 'pattern': 'oval'},
+        '💄': {'color': (50, 0, 180), 'pattern': 'oval'},
+        '👙': {'color': (200, 150, 50), 'pattern': 'bikini'},
+        '🩲': {'color': (200, 100, 50), 'pattern': 'oval'},
+        '😜': {'color': (0, 200, 255), 'pattern': 'wink'},
+        '🤫': {'color': (180, 150, 200), 'pattern': 'shh'},
     }
 
     style = emoji_styles.get(emoji, {'color': (0, 100, 255), 'pattern': 'oval'})
     color = style['color']
     pattern = style['pattern']
 
-    # Create base oval
     overlay = np.zeros_like(image)
     mask = create_oval_mask(h, w, feather=0.15)
 
-    # Draw pattern based on type
     if pattern == 'flame':
-        # Gradient flame effect
         for i in range(h):
             factor = 1.0 - (i / h) * 0.5
             row_color = tuple(int(c * factor) for c in color)
             overlay[i, :] = row_color
     elif pattern == 'hearts':
-        # Multiple small hearts pattern
         overlay[:] = color
-        # Add some sparkle
         for _ in range(5):
             cx, cy = np.random.randint(w//4, 3*w//4), np.random.randint(h//4, 3*h//4)
             cv2.circle(overlay, (cx, cy), min(w, h)//8, (255, 200, 255), -1)
-    elif pattern == 'drops':
-        # Water drop effect
-        overlay[:] = color
-        for i in range(3):
-            cx = w // 2 + (i - 1) * w // 4
-            cy = h // 2
-            cv2.ellipse(overlay, (cx, cy), (w//6, h//4), 0, 0, 360, (255, 230, 150), -1)
     elif pattern == 'cherry':
-        # Two circles like cherries
         r = min(w, h) // 3
         cv2.circle(overlay, (w//3, h//2), r, color, -1)
         cv2.circle(overlay, (2*w//3, h//2), r, color, -1)
-        # Stem
         cv2.line(overlay, (w//3, h//2 - r), (w//2, h//4), (0, 100, 0), max(2, w//20))
         cv2.line(overlay, (2*w//3, h//2 - r), (w//2, h//4), (0, 100, 0), max(2, w//20))
     elif pattern == 'peach':
-        # Peach shape (heart-ish from bottom)
         cv2.ellipse(overlay, (w//2, int(h*0.45)), (int(w*0.45), int(h*0.45)), 0, 0, 360, color, -1)
-        # Cleft line
         cv2.line(overlay, (w//2, h//3), (w//2, h), (int(color[0]*0.7), int(color[1]*0.7), int(color[2]*0.7)), max(2, w//15))
-    elif pattern == 'bikini':
-        # Two triangles
-        pts1 = np.array([[w//4, h//3], [w//2 - w//8, h//3], [3*w//8, 2*h//3]], np.int32)
-        pts2 = np.array([[3*w//4, h//3], [w//2 + w//8, h//3], [5*w//8, 2*h//3]], np.int32)
-        cv2.fillPoly(overlay, [pts1], color)
-        cv2.fillPoly(overlay, [pts2], color)
-    elif pattern in ['smirk', 'wink', 'shh']:
-        # Face-like pattern with expression
-        overlay[:] = color
-        # Eyes
-        eye_y = h // 3
-        cv2.ellipse(overlay, (w//3, eye_y), (w//8, h//10), 0, 0, 360, (255, 255, 255), -1)
-        cv2.ellipse(overlay, (2*w//3, eye_y), (w//8, h//10), 0, 0, 360, (255, 255, 255), -1)
-        # Pupils
-        cv2.circle(overlay, (w//3, eye_y), w//16, (30, 30, 30), -1)
-        if pattern == 'wink':
-            cv2.line(overlay, (2*w//3 - w//8, eye_y), (2*w//3 + w//8, eye_y), (30, 30, 30), max(2, h//20))
-        else:
-            cv2.circle(overlay, (2*w//3, eye_y), w//16, (30, 30, 30), -1)
-        # Mouth
-        if pattern == 'smirk':
-            cv2.ellipse(overlay, (w//2 + w//8, 2*h//3), (w//6, h//10), 0, 0, 180, (50, 50, 50), max(2, h//25))
-        elif pattern == 'shh':
-            cv2.line(overlay, (w//2, h//2 + h//8), (w//2, h - h//6), (200, 150, 180), max(3, w//12))
-        else:
-            cv2.ellipse(overlay, (w//2, 2*h//3), (w//6, h//8), 0, 0, 180, (50, 50, 50), -1)
-    elif pattern in ['lips', 'kiss']:
-        # Lips shape
-        overlay[:] = (0, 0, 0)
-        # Upper lip
-        pts_upper = np.array([
-            [w//6, h//2], [w//3, h//3], [w//2, h//2 - h//8],
-            [2*w//3, h//3], [5*w//6, h//2], [w//2, h//2]
-        ], np.int32)
-        cv2.fillPoly(overlay, [pts_upper], color)
-        # Lower lip
-        pts_lower = np.array([
-            [w//6, h//2], [w//2, h//2], [5*w//6, h//2],
-            [2*w//3, 2*h//3 + h//8], [w//2, 3*h//4], [w//3, 2*h//3 + h//8]
-        ], np.int32)
-        cv2.fillPoly(overlay, [pts_lower], color)
-    elif pattern == 'hot':
-        # Hot/sweating effect - red with drops
-        overlay[:] = color
-        # Sweat drops
-        for i in range(3):
-            dx = w//4 + i * w//4
-            cv2.ellipse(overlay, (dx, h//4), (w//12, h//8), 0, 0, 360, (255, 200, 100), -1)
-    elif pattern == 'horns':
-        # Devil horns on colored background
-        overlay[:] = color
-        # Horns
-        pts1 = np.array([[w//4, 0], [w//6, h//3], [w//3, h//3]], np.int32)
-        pts2 = np.array([[3*w//4, 0], [5*w//6, h//3], [2*w//3, h//3]], np.int32)
-        cv2.fillPoly(overlay, [pts1], (0, 0, 100))
-        cv2.fillPoly(overlay, [pts2], (0, 0, 100))
     else:
-        # Default: solid color oval
         overlay[:] = color
 
-    # Apply oval mask with smooth edges
     mask = cv2.GaussianBlur(mask, (15, 15), 0)
     mask_3ch = cv2.merge([mask, mask, mask])
 
-    # Blend
     result = (overlay.astype(float) * (mask_3ch / 255.0) +
               image.astype(float) * (1 - mask_3ch / 255.0)).astype(np.uint8)
-
     return result
 
+
+_overlay_cache = {}
 
 def image_overlay(image, image_data_b64):
     """Overlay a custom image on the region."""
@@ -963,7 +643,6 @@ def image_overlay(image, image_data_b64):
 
     if cache_key not in _overlay_cache:
         try:
-            # Decode base64 image
             if ',' in image_data_b64:
                 image_data_b64 = image_data_b64.split(',')[1]
 
@@ -974,7 +653,6 @@ def image_overlay(image, image_data_b64):
             if overlay_img is None:
                 return black_box(image)
 
-            # Resize to match region
             overlay_img = cv2.resize(overlay_img, (w, h), interpolation=cv2.INTER_AREA)
             _overlay_cache[cache_key] = overlay_img
         except Exception as e:
@@ -983,11 +661,9 @@ def image_overlay(image, image_data_b64):
 
     overlay = _overlay_cache[cache_key]
 
-    # Resize if needed
     if overlay.shape[0] != h or overlay.shape[1] != w:
         overlay = cv2.resize(overlay, (w, h), interpolation=cv2.INTER_AREA)
 
-    # Handle alpha channel if present
     if overlay.shape[2] == 4:
         alpha = overlay[:,:,3:4] / 255.0
         bgr = overlay[:,:,:3]
@@ -1018,70 +694,137 @@ def apply_blur_style(image, style='pixelate', intensity=25, color=None, emoji=No
         else:
             return black_box(image)
     else:
-        # Default to pixelate
         return pixelate(image, 10)
 
 
-def reencode(input_path, output_path, original=None):
-    """Re-encode to H.264."""
+def check_vaapi_available():
+    """Check if VAAPI hardware encoding is available."""
     try:
-        cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', input_path]
-        if original and os.path.exists(original):
-            cmd.extend(['-i', original, '-map', '0:v:0', '-map', '1:a:0?'])
-        cmd.extend([
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-            '-profile:v', 'high', '-level', '4.1',
-            '-pix_fmt', 'yuv420p', '-movflags', '+faststart'
-        ])
-        if original and os.path.exists(original):
-            cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
-        cmd.append(output_path)
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
+        # Check if VAAPI device exists
+        if os.path.exists('/dev/dri/renderD128'):
+            # Test if ffmpeg can use VAAPI
+            result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-hwaccels'],
+                capture_output=True, text=True, timeout=5
+            )
+            return 'vaapi' in result.stdout.lower()
+    except:
+        pass
+    return False
+
+
+# Cache VAAPI availability check
+_VAAPI_AVAILABLE = None
+
+
+def reencode(input_path, output_path, original=None):
+    """Re-encode to H.264 for web compatibility.
+
+    Tries hardware acceleration (VAAPI) first, falls back to libx264.
+    """
+    global _VAAPI_AVAILABLE
+
+    # Check VAAPI availability once
+    if _VAAPI_AVAILABLE is None:
+        _VAAPI_AVAILABLE = check_vaapi_available()
+        if _VAAPI_AVAILABLE:
+            print(json.dumps({"info": "VAAPI hardware encoding available"}))
+        else:
+            print(json.dumps({"info": "Using software encoding (libx264)"}))
+        sys.stdout.flush()
+
+    try:
+        # Try VAAPI first if available
+        if _VAAPI_AVAILABLE:
+            success = _reencode_vaapi(input_path, output_path, original)
+            if success:
+                return True
+            print(json.dumps({"warning": "VAAPI encoding failed, falling back to libx264"}))
+            sys.stdout.flush()
+
+        # Fallback to libx264
+        return _reencode_libx264(input_path, output_path, original)
     except Exception as e:
         print(json.dumps({"warning": f"Re-encode error: {e}"}))
         return False
 
 
-def signature_matches(face_sig, confirmed_signatures, threshold=0.5):
-    """Check if a face signature matches any confirmed signature."""
-    if confirmed_signatures is None or len(confirmed_signatures) == 0:
-        return True  # No filter, allow all faces
-
-    if face_sig is None or face_sig.hist_hsv is None:
+def _reencode_vaapi(input_path, output_path, original=None):
+    """Re-encode using VAAPI hardware acceleration."""
+    try:
+        cmd = [
+            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+            '-vaapi_device', '/dev/dri/renderD128',
+            '-i', input_path
+        ]
+        if original and os.path.exists(original):
+            cmd.extend(['-i', original, '-map', '0:v:0', '-map', '1:a:0?'])
+        cmd.extend([
+            '-vf', 'format=nv12,hwupload',
+            '-c:v', 'h264_vaapi',
+            '-profile:v', 'high', '-level', '41',
+            '-qp', '23',  # Quality parameter (similar to CRF)
+            '-movflags', '+faststart'
+        ])
+        if original and os.path.exists(original):
+            cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
+        cmd.append(output_path)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        return result.returncode == 0
+    except:
         return False
 
-    for conf_sig in confirmed_signatures:
-        try:
-            conf_sig_arr = np.array(conf_sig, dtype=np.float32).reshape(-1, 1)
-            if conf_sig_arr.size < 10:
-                continue
 
-            # Compare histograms
-            face_flat = face_sig.hist_hsv.flatten().reshape(-1, 1).astype(np.float32)
+def _reencode_libx264(input_path, output_path, original=None):
+    """Re-encode using libx264 (software)."""
+    cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', input_path]
+    if original and os.path.exists(original):
+        cmd.extend(['-i', original, '-map', '0:v:0', '-map', '1:a:0?'])
+    cmd.extend([
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+        '-profile:v', 'high', '-level', '4.1',
+        '-pix_fmt', 'yuv420p', '-movflags', '+faststart'
+    ])
+    if original and os.path.exists(original):
+        cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
+    cmd.append(output_path)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    return result.returncode == 0
 
-            # Resize to match if needed
-            if face_flat.size != conf_sig_arr.size:
-                min_size = min(face_flat.size, conf_sig_arr.size)
-                face_flat = face_flat[:min_size]
-                conf_sig_arr = conf_sig_arr[:min_size]
 
-            dist = cv2.compareHist(face_flat, conf_sig_arr, cv2.HISTCMP_BHATTACHARYYA)
-            if dist < threshold:
-                return True
-        except Exception:
-            continue
-
-    return False
-
+# ============================================
+# Main Blur Function with DeepSORT Tracking
+# ============================================
 
 def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confirmed_signatures=None,
                blur_style='pixelate', blur_color=None, blur_emoji=None, blur_image=None):
-    """Main face blur function with multiple style support."""
-    # If user confirmed faces, use lower confidence threshold
-    if confirmed_signatures is not None and len(confirmed_signatures) > 0:
-        confidence = max(0.5, confidence)  # More lenient when user confirmed
-    detector = RobustFaceDetector(confidence)
+    """Main face blur function using InsightFace for consistent detection."""
+
+    # Detect signature type (512 = ArcFace, 960 = HSV histogram)
+    use_arcface = False
+    if confirmed_signatures and len(confirmed_signatures) > 0:
+        first_sig = confirmed_signatures[0]
+        use_arcface = len(first_sig) == 512
+
+    # Log received signatures for debugging
+    num_sigs = len(confirmed_signatures) if confirmed_signatures else 0
+    print(json.dumps({
+        "debug": "starting_blur",
+        "num_confirmed_signatures": num_sigs,
+        "blur_style": blur_style,
+        "use_arcface": use_arcface,
+        "insightface_available": INSIGHTFACE_AVAILABLE
+    }))
+    sys.stdout.flush()
+
+    # Initialize face detector - use InsightFace if signatures are ArcFace embeddings
+    if use_arcface and INSIGHTFACE_AVAILABLE:
+        detector = InsightFaceDetector(confidence)
+        if detector.app is None:
+            detector = FaceDetector(confidence)
+            use_arcface = False
+    else:
+        detector = FaceDetector(confidence)
 
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -1095,18 +838,23 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
     if total == 0:
         return {"error": "No frames"}
 
-    detect_every = max(5, fps // 3)
-    max_lost = fps
-
-    tracker = FaceTracker(detector, detect_every, max_lost)
-
-    # Store confirmed signatures for filtering
-    tracker.confirmed_signatures = confirmed_signatures
-
-    # If user confirmed faces, be more lenient
-    if confirmed_signatures is not None and len(confirmed_signatures) > 0:
-        tracker.user_confirmed_faces = True
-        tracker.min_confirmations = 1  # Blur immediately if user confirmed faces exist
+    # Initialize DeepSORT tracker
+    if DEEPSORT_AVAILABLE:
+        tracker = DeepSort(
+            max_age=30,           # Frames to keep track without detection
+            n_init=2,             # Detections needed to confirm track
+            nms_max_overlap=0.7,  # NMS threshold
+            max_cosine_distance=0.4,  # Appearance similarity threshold
+            nn_budget=100,        # Max samples per track
+            embedder="mobilenet", # Use MobileNet embeddings
+            half=True,            # Use FP16 for speed
+            embedder_gpu=False    # CPU for compatibility
+        )
+        print(json.dumps({"tracker": "DeepSORT", "max_age": 30, "n_init": 2}))
+    else:
+        tracker = None
+        print(json.dumps({"tracker": "Fallback (frame-by-frame)"}))
+    sys.stdout.flush()
 
     temp = output_path + '.temp.mp4'
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -1116,33 +864,162 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
         cap.release()
         return {"error": "Cannot create output"}
 
+    # Calculate detection interval for logging
+    actual_detect_interval = INSIGHTFACE_DETECT_INTERVAL if (use_arcface and INSIGHTFACE_AVAILABLE) else DETECT_EVERY_N_FRAMES
+
     print(json.dumps({
         "progress": 0,
         "status": "starting",
         "total_frames": total,
-        "method": "FaceDetectorYN with landmarks" if detector.face_detector_yn else "DNN",
         "blur_style": blur_style,
-        "dlib_available": DLIB_AVAILABLE,
-        "pil_available": PIL_AVAILABLE
+        "detect_every_n_frames": actual_detect_interval,
+        "optimization": f"Detecting every {actual_detect_interval} frames ({100//actual_detect_interval}% detection calls)"
     }))
     sys.stdout.flush()
 
     frame_count = 0
-    faces_total = 0
+    faces_blurred_total = 0
     last_prog = -1
+
+    # Track which track IDs match confirmed signatures
+    confirmed_track_ids = set()
+    track_signatures = {}  # track_id -> signature
+
+    # Cache for face positions (used when skipping detection)
+    cached_faces = []  # List of (x, y, w, h) from last detection
+    last_detection_frame = -999  # Force detection on first frame
+
+    # Determine detection interval based on detector type
+    detect_interval = INSIGHTFACE_DETECT_INTERVAL if (use_arcface and isinstance(detector, InsightFaceDetector)) else DETECT_EVERY_N_FRAMES
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        faces = tracker.update(frame)
+        # Only run detection every N frames to save CPU
+        run_detection = (frame_count - last_detection_frame) >= detect_interval or frame_count == 0
 
-        for bbox in faces:
-            x, y, fw, fh = bbox
+        if run_detection:
+            detections = detector.detect(frame)
+            last_detection_frame = frame_count
+        else:
+            # Use cached positions or let DeepSORT predict
+            detections = []
+
+        faces_to_blur = []
+
+        # InsightFace mode: use embeddings directly for matching
+        if use_arcface and isinstance(detector, InsightFaceDetector):
+            if run_detection and len(detections) > 0:
+                # Update cache with new detections
+                cached_faces = []
+                for detection in detections:
+                    # InsightFace returns (x, y, w, h, conf, embedding)
+                    x, y, fw, fh, conf, embedding = detection
+                    x1, y1 = max(0, x), max(0, y)
+                    x2, y2 = min(w, x + fw), min(h, y + fh)
+
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+
+                    # Use ArcFace embedding for matching
+                    if confirmed_signatures is None:
+                        # No filter, blur all
+                        faces_to_blur.append((x1, y1, x2 - x1, y2 - y1))
+                        cached_faces.append((x1, y1, x2 - x1, y2 - y1))
+                    elif len(confirmed_signatures) == 0:
+                        # Empty list = blur nothing
+                        pass
+                    elif embedding is not None:
+                        # Check if this face matches any confirmed signature
+                        if signature_matches(embedding, confirmed_signatures):
+                            faces_to_blur.append((x1, y1, x2 - x1, y2 - y1))
+                            cached_faces.append((x1, y1, x2 - x1, y2 - y1))
+            else:
+                # Use cached face positions for intermediate frames
+                faces_to_blur = cached_faces.copy()
+
+        elif DEEPSORT_AVAILABLE and tracker is not None:
+            # DeepSORT mode: use tracker for temporal consistency
+            # Format detections for DeepSORT: ([left, top, w, h], confidence, class)
+            deepsort_dets = []
+            for det in detections:
+                # Handle both 5-value and 6-value returns
+                if len(det) == 6:
+                    x, y, fw, fh, conf, _ = det
+                else:
+                    x, y, fw, fh, conf = det
+                deepsort_dets.append(([x, y, fw, fh], conf, "face"))
+
+            # Update tracker
+            tracks = tracker.update_tracks(deepsort_dets, frame=frame)
+
+            for track in tracks:
+                if not track.is_confirmed():
+                    continue
+
+                track_id = track.track_id
+                ltrb = track.to_ltrb()  # [left, top, right, bottom]
+                x1, y1, x2, y2 = [int(v) for v in ltrb]
+                fw, fh = x2 - x1, y2 - y1
+
+                # Clamp to frame bounds
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(w, x2)
+                y2 = min(h, y2)
+
+                if x2 <= x1 or y2 <= y1:
+                    continue
+
+                # Compute signature for this track if not already done
+                if track_id not in track_signatures:
+                    roi = frame[y1:y2, x1:x2]
+                    if roi.size > 0:
+                        sig = compute_signature(roi)
+                        track_signatures[track_id] = sig
+
+                        # Check if matches confirmed signatures
+                        matches = signature_matches(sig, confirmed_signatures)
+                        if matches:
+                            confirmed_track_ids.add(track_id)
+
+                # Only blur if this track matches a confirmed signature
+                if confirmed_signatures is None:
+                    faces_to_blur.append((x1, y1, x2 - x1, y2 - y1))
+                elif len(confirmed_signatures) == 0:
+                    pass
+                elif track_id in confirmed_track_ids:
+                    faces_to_blur.append((x1, y1, x2 - x1, y2 - y1))
+
+        else:
+            # Fallback: blur every detected face if it matches signature
+            for det in detections:
+                # Handle both 5-value and 6-value returns
+                if len(det) == 6:
+                    x, y, fw, fh, conf, embedding = det
+                else:
+                    x, y, fw, fh, conf = det
+                    embedding = None
+                x1, y1 = max(0, x), max(0, y)
+                x2, y2 = min(w, x + fw), min(h, y + fh)
+
+                if x2 > x1 and y2 > y1:
+                    roi = frame[y1:y2, x1:x2]
+                    if roi.size > 0:
+                        sig = compute_signature(roi)
+                        if signature_matches(sig, confirmed_signatures):
+                            faces_to_blur.append((x1, y1, x2 - x1, y2 - y1))
+
+        # Apply blur to detected faces
+        for (fx, fy, fw, fh) in faces_to_blur:
+            # Add padding
             pad = int(min(fw, fh) * 0.15)
-            x1, y1 = max(0, x - pad), max(0, y - pad)
-            x2, y2 = min(w, x + fw + pad), min(h, y + fh + pad)
+            x1 = max(0, fx - pad)
+            y1 = max(0, fy - pad)
+            x2 = min(w, fx + fw + pad)
+            y2 = min(h, fy + fh + pad)
 
             if x2 > x1 and y2 > y1:
                 roi = frame[y1:y2, x1:x2]
@@ -1154,11 +1031,12 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
                     emoji=blur_emoji,
                     image_data=blur_image
                 )
-                faces_total += 1
+                faces_blurred_total += 1
 
         out.write(frame)
         frame_count += 1
 
+        # Progress update
         prog = int((frame_count / total) * 100)
         if prog > last_prog:
             last_prog = prog
@@ -1166,8 +1044,8 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
                 "progress": prog / 100.0,
                 "frame": frame_count,
                 "total_frames": total,
-                "tracked": len(tracker.faces),
-                "blurred": len(faces)
+                "faces_this_frame": len(faces_to_blur),
+                "confirmed_tracks": len(confirmed_track_ids) if DEEPSORT_AVAILABLE else 0
             }))
             sys.stdout.flush()
 
@@ -1190,9 +1068,10 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
         "status": "completed",
         "progress": 1.0,
         "frames_processed": frame_count,
-        "total_faces_blurred": faces_total,
+        "total_faces_blurred": faces_blurred_total,
         "blur_style": blur_style,
-        "output_path": output_path
+        "output_path": output_path,
+        "tracker_used": "DeepSORT" if DEEPSORT_AVAILABLE else "Fallback"
     }
 
     print(json.dumps(result))
@@ -1201,14 +1080,16 @@ def blur_faces(input_path, output_path, blur_intensity=25, confidence=0.5, confi
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Robust face blur with landmark verification')
+    parser = argparse.ArgumentParser(description='Face blur with DeepSORT tracking')
     parser.add_argument('--input', '-i', required=True)
     parser.add_argument('--output', '-o', required=True)
     parser.add_argument('--intensity', '-b', type=int, default=25)
     parser.add_argument('--confidence', type=float, default=0.5)
-    parser.add_argument('--zones', '-z', type=str, default=None, help='Ignored')
+    parser.add_argument('--zones', '-z', type=str, default=None, help='Ignored (legacy)')
     parser.add_argument('--signatures', '-s', type=str, default=None,
                         help='JSON array of confirmed face signatures')
+    parser.add_argument('--signatures-file', type=str, default=None,
+                        help='Path to JSON file containing confirmed face signatures')
     parser.add_argument('--style', type=str, default='pixelate',
                         help='Blur style: pixelate, gaussian, color, box, emoji, image')
     parser.add_argument('--color', type=str, default='#000000',
@@ -1224,23 +1105,24 @@ def main():
         print(json.dumps({"error": f"Input not found: {args.input}"}))
         sys.exit(1)
 
-    # Parse confirmed signatures if provided
+    # Parse confirmed signatures - prefer file over argument (for large lists)
     confirmed_signatures = None
-    if args.signatures:
+    if args.signatures_file and os.path.exists(args.signatures_file):
+        try:
+            with open(args.signatures_file, 'r') as f:
+                confirmed_signatures = json.load(f)
+            print(json.dumps({"info": f"Loaded {len(confirmed_signatures)} signatures from file"}))
+            sys.stdout.flush()
+        except Exception as e:
+            print(json.dumps({"warning": f"Failed to load signatures file: {e}"}))
+            sys.stdout.flush()
+    elif args.signatures:
         try:
             confirmed_signatures = json.loads(args.signatures)
-            print(json.dumps({"info": f"Using {len(confirmed_signatures)} confirmed face signatures"}))
+            print(json.dumps({"info": f"Loaded {len(confirmed_signatures)} confirmed signatures"}))
             sys.stdout.flush()
         except:
             pass
-
-    print(json.dumps({
-        "info": f"Blur style: {args.style}",
-        "color": args.color if args.style == 'color' else None,
-        "emoji": args.emoji if args.style == 'emoji' else None,
-        "has_image": args.image is not None if args.style == 'image' else None
-    }))
-    sys.stdout.flush()
 
     result = blur_faces(
         args.input, args.output, args.intensity, args.confidence, confirmed_signatures,

@@ -90,6 +90,12 @@ const EMOJI_PRESETS = [
   { emoji: '😜', label: 'Guiño' },
 ];
 
+// Segment type for clip time ranges
+interface Segment {
+  start: number;
+  end: number;
+}
+
 interface Props {
   config: BlurConfig;
   onChange: (config: BlurConfig) => void;
@@ -97,15 +103,17 @@ interface Props {
   videoId?: string | null;
   activeClipsWithBlur?: number;
   totalClips?: number;
+  segments?: Segment[]; // Clips to scan instead of entire video
 }
 
-export default function BlurRegionSelector({ config, onChange, onClose, videoId }: Props) {
+export default function BlurRegionSelector({ config, onChange, onClose, videoId, segments }: Props) {
   const isActive = config.mode === 'auto';
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>(config.confirmedFaces || []);
   const [hasScanned, setHasScanned] = useState((config.confirmedFaces?.length || 0) > 0);
   const [showStyleGallery, setShowStyleGallery] = useState(false);
+  const [showAllFaces, setShowAllFaces] = useState(true); // Default: show all faces for better accuracy
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Current blur style with defaults
@@ -116,7 +124,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId 
     emoji: '😀',
   };
 
-  const handleScanFaces = async () => {
+  const handleScanFaces = async (groupSimilar = true) => {
     if (!videoId) return;
 
     setIsScanning(true);
@@ -124,10 +132,28 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId 
     setDetectedFaces([]);
 
     try {
+      // Build request with optional segments for optimized scanning
+      const requestBody: {
+        interval: number;
+        max_faces: number;
+        group_similar: boolean;
+        segments?: Segment[];
+      } = {
+        interval: 0.5,
+        max_faces: groupSimilar ? 20 : 50,
+        group_similar: groupSimilar,
+      };
+
+      // Only scan within selected clips if available
+      if (segments && segments.length > 0) {
+        requestBody.segments = segments;
+        console.log(`Scanning ${segments.length} clips instead of entire video`);
+      }
+
       const response = await fetch(`/api/videos/${videoId}/detect-faces`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interval: 0.5, max_faces: 20 }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -365,7 +391,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId 
             </span>
           </div>
           <button
-            onClick={handleScanFaces}
+            onClick={() => handleScanFaces(!showAllFaces)}
             disabled={isScanning || !videoId}
             style={{
               background: isScanning ? colors.border : colors.primary,
@@ -397,6 +423,45 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId 
                 Detectar
               </>
             )}
+          </button>
+        </div>
+
+        {/* Show all faces toggle */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          background: colors.surface,
+          borderRadius: '8px',
+          marginBottom: '12px',
+        }}>
+          <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
+            Mostrar todos (sin agrupar similares)
+          </span>
+          <button
+            onClick={() => setShowAllFaces(!showAllFaces)}
+            style={{
+              width: '40px',
+              height: '22px',
+              borderRadius: '11px',
+              border: 'none',
+              background: showAllFaces ? colors.primary : colors.border,
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'background 0.2s ease',
+            }}
+          >
+            <div style={{
+              width: '16px',
+              height: '16px',
+              borderRadius: '50%',
+              background: '#fff',
+              position: 'absolute',
+              top: '3px',
+              left: showAllFaces ? '21px' : '3px',
+              transition: 'left 0.2s ease',
+            }} />
           </button>
         </div>
 

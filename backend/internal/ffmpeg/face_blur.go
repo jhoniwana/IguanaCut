@@ -93,13 +93,50 @@ func (e *Executor) BlurFacesAuto(ctx context.Context, input, output string, inte
 		args = append(args, "--image", imageData)
 	}
 
-	// Add confirmed signatures if provided
-	if len(confirmedSignatures) > 0 {
+	// Write confirmed signatures to temp file to avoid "argument list too long" error
+	// IMPORTANT: Always write file if confirmedSignatures is not nil, even if empty
+	// This allows Python to distinguish between:
+	// - nil (no filter) → blur all faces
+	// - empty [] (user deselected all) → blur nothing
+	// - [sig1, sig2...] (user confirmed specific faces) → blur only matching faces
+	var signaturesFile string
+	if confirmedSignatures != nil {
 		signaturesJSON, err := json.Marshal(confirmedSignatures)
 		if err == nil {
-			args = append(args, "--signatures", string(signaturesJSON))
+			// Create temp file for signatures
+			tmpFile, err := os.CreateTemp("", "face_signatures_*.json")
+			if err != nil {
+				e.logger.Warn("Failed to create temp file for signatures, falling back to args",
+					zap.Error(err))
+				// Fallback to args (may fail for large signature lists)
+				args = append(args, "--signatures", string(signaturesJSON))
+			} else {
+				signaturesFile = tmpFile.Name()
+				if _, err := tmpFile.Write(signaturesJSON); err != nil {
+					e.logger.Warn("Failed to write signatures to temp file",
+						zap.Error(err))
+					tmpFile.Close()
+					os.Remove(signaturesFile)
+					signaturesFile = ""
+					args = append(args, "--signatures", string(signaturesJSON))
+				} else {
+					tmpFile.Close()
+					args = append(args, "--signatures-file", signaturesFile)
+					e.logger.Info("Signatures written to temp file",
+						zap.String("file", signaturesFile),
+						zap.Int("count", len(confirmedSignatures)),
+					)
+				}
+			}
 		}
 	}
+
+	// Cleanup signatures file after command completes
+	defer func() {
+		if signaturesFile != "" {
+			os.Remove(signaturesFile)
+		}
+	}()
 
 	cmd := exec.CommandContext(ctx, pythonCmd, args...)
 
@@ -284,8 +321,16 @@ func (e *Executor) BlurFacesGuided(ctx context.Context, input, output string, in
 	return nil
 }
 
+// TimeRange represents a time segment for scanning
+type TimeRange struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+}
+
 // DetectFaces runs face detection and returns thumbnails for user confirmation
-func (e *Executor) DetectFaces(ctx context.Context, input string, interval float64, maxFaces int) (map[string]interface{}, error) {
+// groupSimilar: if false, returns all detected faces without grouping similar ones
+// segments: if provided, only scan within these time ranges
+func (e *Executor) DetectFaces(ctx context.Context, input string, interval float64, maxFaces int, groupSimilar bool, segments []TimeRange) (map[string]interface{}, error) {
 	scriptPath := e.findDetectScript()
 	if scriptPath == "" {
 		return nil, fmt.Errorf("detect_faces.py script not found")
@@ -295,6 +340,8 @@ func (e *Executor) DetectFaces(ctx context.Context, input string, interval float
 		zap.String("input", input),
 		zap.Float64("interval", interval),
 		zap.Int("maxFaces", maxFaces),
+		zap.Bool("groupSimilar", groupSimilar),
+		zap.Int("segments", len(segments)),
 		zap.String("script", scriptPath),
 	)
 
@@ -308,6 +355,19 @@ func (e *Executor) DetectFaces(ctx context.Context, input string, interval float
 		"--input", input,
 		"--interval", fmt.Sprintf("%.2f", interval),
 		"--max-faces", fmt.Sprintf("%d", maxFaces),
+	}
+
+	// Add --no-group flag if grouping is disabled
+	if !groupSimilar {
+		args = append(args, "--no-group")
+	}
+
+	// Add segments if provided
+	if len(segments) > 0 {
+		segmentsJSON, err := json.Marshal(segments)
+		if err == nil {
+			args = append(args, "--segments", string(segmentsJSON))
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, pythonCmd, args...)

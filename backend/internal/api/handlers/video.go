@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mifi/lossless-cut/backend/internal/config"
+	"github.com/mifi/lossless-cut/backend/internal/ffmpeg"
 	"github.com/mifi/lossless-cut/backend/internal/models"
 	"github.com/mifi/lossless-cut/backend/internal/services"
 	"go.uber.org/zap"
@@ -400,8 +401,10 @@ func (h *VideoHandler) List(c *gin.Context) {
 
 // DetectFacesRequest represents the request for face detection
 type DetectFacesRequest struct {
-	Interval float64 `json:"interval"` // Sample interval in seconds
-	MaxFaces int     `json:"max_faces"` // Maximum faces to detect
+	Interval     float64            `json:"interval"`      // Sample interval in seconds
+	MaxFaces     int                `json:"max_faces"`     // Maximum faces to detect
+	GroupSimilar *bool              `json:"group_similar"` // Group similar faces (default: true)
+	Segments     []ffmpeg.TimeRange `json:"segments"`      // Time ranges to scan (empty = entire video)
 }
 
 // DetectFaces scans a video and returns detected face thumbnails for confirmation
@@ -430,8 +433,20 @@ func (h *VideoHandler) DetectFaces(c *gin.Context) {
 		req.MaxFaces = 20
 	}
 
+	// Default to grouping similar faces
+	groupSimilar := true
+	if req.GroupSimilar != nil {
+		groupSimilar = *req.GroupSimilar
+	}
+
+	h.logger.Info("Starting face detection",
+		zap.String("videoId", videoID),
+		zap.Bool("groupSimilar", groupSimilar),
+		zap.Int("segments", len(req.Segments)),
+	)
+
 	// Run face detection script
-	result, err := h.services.Video.DetectFaces(video.FilePath, req.Interval, req.MaxFaces)
+	result, err := h.services.Video.DetectFaces(video.FilePath, req.Interval, req.MaxFaces, groupSimilar, req.Segments)
 	if err != nil {
 		h.logger.Error("Face detection failed", zap.String("videoId", videoID), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "face detection failed: " + err.Error()})
