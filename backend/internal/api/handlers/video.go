@@ -455,3 +455,289 @@ func (h *VideoHandler) DetectFaces(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// ==================== Multi-Clip Timeline Endpoints ====================
+
+// BatchUpload handles uploading multiple video files at once
+func (h *VideoHandler) BatchUpload(c *gin.Context) {
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to parse multipart form"})
+		return
+	}
+
+	files := form.File["files"]
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no files provided"})
+		return
+	}
+
+	sessionID := c.GetHeader("X-Session-ID")
+	response := models.BatchUploadResponse{
+		Videos: make([]*models.Video, 0, len(files)),
+		Errors: make([]string, 0),
+	}
+
+	for _, file := range files {
+		// Check file size
+		if file.Size > h.config.Server.MaxUploadSize {
+			response.Errors = append(response.Errors, fmt.Sprintf("%s: file too large", file.Filename))
+			response.Failed++
+			continue
+		}
+
+		// Generate unique filename
+		ext := filepath.Ext(file.Filename)
+		filename := uuid.New().String() + ext
+		destPath := h.services.Storage.GetVideoPath(filename)
+
+		// Save file
+		if err := c.SaveUploadedFile(file, destPath); err != nil {
+			h.logger.Error("Failed to save uploaded file", zap.String("filename", file.Filename), zap.Error(err))
+			response.Errors = append(response.Errors, fmt.Sprintf("%s: failed to save", file.Filename))
+			response.Failed++
+			continue
+		}
+
+		// Create video record
+		video, err := h.services.Video.CreateFromUpload(file.Filename, destPath, sessionID)
+		if err != nil {
+			h.logger.Error("Failed to create video record", zap.String("filename", file.Filename), zap.Error(err))
+			response.Errors = append(response.Errors, fmt.Sprintf("%s: failed to process", file.Filename))
+			response.Failed++
+			// Clean up saved file
+			os.Remove(destPath)
+			continue
+		}
+
+		response.Videos = append(response.Videos, video)
+		response.Success++
+
+		h.logger.Info("Video uploaded in batch",
+			zap.String("id", video.ID),
+			zap.String("filename", file.Filename),
+			zap.String("sessionID", sessionID),
+		)
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+// CheckCodecCompatibility checks if multiple videos can be merged losslessly
+func (h *VideoHandler) CheckCodecCompatibility(c *gin.Context) {
+	var req struct {
+		VideoIDs []string `json:"video_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.VideoIDs) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least 2 videos required"})
+		return
+	}
+
+	codecs := make([]models.CodecInfo, 0, len(req.VideoIDs))
+	var referenceCodec *models.CodecInfo
+
+	for i, videoID := range req.VideoIDs {
+		video, err := h.services.Video.GetVideo(videoID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("video %s not found", videoID)})
+			return
+		}
+
+		// Extract codec info from metadata
+		codecInfo := models.CodecInfo{
+			Width:  video.Width,
+			Height: video.Height,
+		}
+
+		for _, stream := range video.Metadata.Streams {
+			if stream.CodecType == "video" && codecInfo.VideoCodec == "" {
+				codecInfo.VideoCodec = stream.CodecName
+				if stream.SampleRate > 0 {
+					codecInfo.FrameRate = fmt.Sprintf("%d", stream.SampleRate)
+				}
+			} else if stream.CodecType == "audio" && codecInfo.AudioCodec == "" {
+				codecInfo.AudioCodec = stream.CodecName
+				codecInfo.SampleRate = stream.SampleRate
+			}
+		}
+
+		codecs = append(codecs, codecInfo)
+
+		if i == 0 {
+			referenceCodec = &codecs[0]
+		}
+	}
+
+	// Check compatibility
+	result := models.CodecCompatibility{
+		Compatible:     true,
+		RequiresEncode: false,
+		Codecs:         codecs,
+	}
+
+	for i, codec := range codecs {
+		if i == 0 {
+			continue
+		}
+
+		if codec.VideoCodec != referenceCodec.VideoCodec {
+			result.Compatible = false
+			result.RequiresEncode = true
+			result.Reason = fmt.Sprintf("different video codecs: %s vs %s", referenceCodec.VideoCodec, codec.VideoCodec)
+			break
+		}
+
+		if codec.AudioCodec != referenceCodec.AudioCodec {
+			result.Compatible = false
+			result.RequiresEncode = true
+			result.Reason = fmt.Sprintf("different audio codecs: %s vs %s", referenceCodec.AudioCodec, codec.AudioCodec)
+			break
+		}
+
+		if codec.Width != referenceCodec.Width || codec.Height != referenceCodec.Height {
+			result.Compatible = false
+			result.RequiresEncode = true
+			result.Reason = fmt.Sprintf("different resolutions: %dx%d vs %dx%d",
+				referenceCodec.Width, referenceCodec.Height, codec.Width, codec.Height)
+			break
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// Thumbnail generates and serves a thumbnail for a video
+func (h *VideoHandler) Thumbnail(c *gin.Context) {
+	videoID := c.Param("id")
+
+	// Get optional timestamp parameter (default: 0)
+	timestampStr := c.Query("t")
+	timestamp := 0.0
+	if timestampStr != "" {
+		if t, err := strconv.ParseFloat(timestampStr, 64); err == nil {
+			timestamp = t
+		}
+	}
+
+	// Generate thumbnail using screenshot functionality
+	filename, err := h.services.Video.CaptureScreenshot(videoID, timestamp)
+	if err != nil {
+		h.logger.Error("Failed to generate thumbnail",
+			zap.String("videoId", videoID),
+			zap.Float64("timestamp", timestamp),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate thumbnail"})
+		return
+	}
+
+	// Serve the thumbnail
+	filepath := h.services.Storage.GetScreenshotPath(filename)
+	c.Header("Content-Type", "image/jpeg")
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.File(filepath)
+}
+
+// WatermarkUpload handles watermark image upload
+func (h *VideoHandler) WatermarkUpload(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no file provided"})
+		return
+	}
+
+	// Validate file type (PNG only for transparency support)
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".png" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only PNG files are supported for watermarks"})
+		return
+	}
+
+	// Check file size (max 5MB for watermarks)
+	if file.Size > 5*1024*1024 {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "watermark file too large (max 5MB)"})
+		return
+	}
+
+	// Generate unique filename
+	watermarkID := uuid.New().String()
+	filename := watermarkID + ext
+
+	// Save to watermarks directory
+	watermarkDir := filepath.Join(h.config.Storage.BasePath, "watermarks")
+	if err := os.MkdirAll(watermarkDir, 0755); err != nil {
+		h.logger.Error("Failed to create watermarks directory", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save watermark"})
+		return
+	}
+
+	watermarkPath := filepath.Join(watermarkDir, filename)
+	if err := c.SaveUploadedFile(file, watermarkPath); err != nil {
+		h.logger.Error("Failed to save watermark", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save watermark"})
+		return
+	}
+
+	h.logger.Info("Watermark uploaded", zap.String("id", watermarkID), zap.String("filename", filename))
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":       watermarkID,
+		"filename": filename,
+		"url":      "/api/watermarks/" + filename,
+	})
+}
+
+// WatermarkServe serves a watermark image
+func (h *VideoHandler) WatermarkServe(c *gin.Context) {
+	filename := c.Param("filename")
+
+	// Sanitize filename
+	filename = filepath.Base(filename)
+	if !strings.HasSuffix(strings.ToLower(filename), ".png") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid watermark filename"})
+		return
+	}
+
+	watermarkPath := filepath.Join(h.config.Storage.BasePath, "watermarks", filename)
+
+	if _, err := os.Stat(watermarkPath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "watermark not found"})
+		return
+	}
+
+	c.Header("Content-Type", "image/png")
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.File(watermarkPath)
+}
+
+// WatermarkDelete deletes a watermark
+func (h *VideoHandler) WatermarkDelete(c *gin.Context) {
+	filename := c.Param("filename")
+
+	// Sanitize filename
+	filename = filepath.Base(filename)
+	if !strings.HasSuffix(strings.ToLower(filename), ".png") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid watermark filename"})
+		return
+	}
+
+	watermarkPath := filepath.Join(h.config.Storage.BasePath, "watermarks", filename)
+
+	if err := os.Remove(watermarkPath); err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "watermark not found"})
+			return
+		}
+		h.logger.Error("Failed to delete watermark", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete watermark"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "watermark deleted"})
+}

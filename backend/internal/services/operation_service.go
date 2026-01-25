@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -761,6 +763,380 @@ func (s *OperationService) needsGuidedBlur(request models.ExportRequest) bool {
 	return request.BlurMode == "guided" && len(request.DetectionZones) > 0
 }
 
+// needsWatermark checks if watermark is enabled in the request
+func (s *OperationService) needsWatermark(request models.ExportRequest) bool {
+	return request.Watermark != nil && request.Watermark.Enabled && request.Watermark.Filename != ""
+}
+
+// ==================== Multi-Clip Timeline Export ====================
+
+// ExportTimeline exports a timeline project with multiple clips
+func (s *OperationService) ExportTimeline(project *models.TimelineProject, request *models.TimelineExportRequest) (string, error) {
+	operation := &models.Operation{
+		ID:        uuid.New().String(),
+		Type:      models.OperationTypeExport,
+		ProjectID: project.ID,
+		Status:    models.OperationStatusPending,
+		Progress:  0,
+		CreatedAt: time.Now(),
+	}
+
+	// Store operation
+	s.operations[operation.ID] = operation
+
+	// Run export in background
+	go s.runTimelineExport(operation, project, request)
+
+	return operation.ID, nil
+}
+
+func (s *OperationService) runTimelineExport(operation *models.Operation, project *models.TimelineProject, request *models.TimelineExportRequest) {
+	operation.Status = models.OperationStatusProcessing
+	operation.Progress = 5
+	ctx := context.Background()
+
+	s.logger.Info("Starting timeline export",
+		zap.String("operationId", operation.ID),
+		zap.String("projectId", project.ID),
+		zap.Int("clipCount", len(project.TimelineClips)),
+	)
+
+	if len(project.TimelineClips) == 0 {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = "no clips to export"
+		return
+	}
+
+	// Ensure temp and output directories exist
+	if err := os.MkdirAll(s.storage.TempDir(), 0755); err != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("failed to create temp directory: %v", err)
+		return
+	}
+	if err := os.MkdirAll(s.storage.OutputsDir(), 0755); err != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("failed to create outputs directory: %v", err)
+		return
+	}
+
+	// Check codec compatibility
+	codecsCompatible, codecInfo, err := s.checkCodecCompatibility(project)
+	if err != nil {
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("failed to check codec compatibility: %v", err)
+		return
+	}
+
+	s.logger.Info("Codec compatibility check",
+		zap.Bool("compatible", codecsCompatible),
+		zap.Bool("forceReencode", request.ForceReencode),
+		zap.String("codecInfo", codecInfo),
+	)
+
+	needsReencode := !codecsCompatible || request.ForceReencode || request.CropEnabled
+
+	// Parallel clip cutting
+	tempFiles := make([]string, len(project.TimelineClips))
+	totalDuration := 0.0
+
+	type cutResult struct {
+		index    int
+		tempFile string
+		duration float64
+		err      error
+	}
+
+	results := make(chan cutResult, len(project.TimelineClips))
+	var wg sync.WaitGroup
+
+	for i, clip := range project.TimelineClips {
+		wg.Add(1)
+		go func(idx int, c models.TimelineClip) {
+			defer wg.Done()
+
+			// Get source video
+			video, err := s.storage.GetVideo(c.SourceVideoID)
+			if err != nil {
+				results <- cutResult{index: idx, err: fmt.Errorf("source video not found: %s", c.SourceVideoID)}
+				return
+			}
+
+			tempFile := s.storage.GetTempPath(fmt.Sprintf("timeline_clip_%d_%s.mp4", idx, uuid.New().String()))
+
+			clipDuration := c.SourceEnd - c.SourceStart
+
+			s.logger.Info("Cutting timeline clip (parallel)",
+				zap.Int("index", idx),
+				zap.String("clipId", c.ID),
+				zap.String("sourceVideo", c.SourceVideoID),
+				zap.Float64("start", c.SourceStart),
+				zap.Float64("end", c.SourceEnd),
+				zap.Float64("duration", clipDuration),
+			)
+
+			// Progress callback for this clip
+			clipProgress := func(progress float64) {
+				// Scale progress: 5-80% for cutting clips
+				baseProgress := 5.0
+				cutRange := 70.0
+				clipWeight := 1.0 / float64(len(project.TimelineClips))
+				scaledProgress := baseProgress + (cutRange * (float64(idx) + progress) * clipWeight)
+				if scaledProgress > operation.Progress {
+					operation.Progress = scaledProgress
+				}
+			}
+
+			// Cut the clip
+			var cutErr error
+			if needsReencode {
+				filterOpts := ffmpeg.FilterOptions{
+					CropEnabled: request.CropEnabled,
+					CropX:       request.CropX,
+					CropY:       request.CropY,
+					CropWidth:   request.CropWidth,
+					CropHeight:  request.CropHeight,
+				}
+				cutErr = s.ffmpeg.CutVideoWithFilters(ctx, video.FilePath, tempFile, c.SourceStart, c.SourceEnd, filterOpts, clipProgress)
+			} else {
+				// Use lossless cutting with stream copy (-c copy) - FAST!
+				cutErr = s.ffmpeg.CutVideoLossless(ctx, video.FilePath, tempFile, c.SourceStart, c.SourceEnd, clipProgress)
+			}
+
+			if cutErr != nil {
+				results <- cutResult{index: idx, err: cutErr}
+				return
+			}
+
+			results <- cutResult{index: idx, tempFile: tempFile, duration: clipDuration}
+		}(i, clip)
+	}
+
+	// Wait for all clips to finish cutting
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	for result := range results {
+		if result.err != nil {
+			operation.Status = models.OperationStatusFailed
+			operation.Error = fmt.Sprintf("failed to cut clip %d: %v", result.index, result.err)
+			s.cleanupTempFiles(tempFiles)
+			return
+		}
+		tempFiles[result.index] = result.tempFile
+		totalDuration += result.duration
+	}
+
+	// Build output filename
+	outputName := request.OutputName
+	if outputName == "" {
+		outputName = fmt.Sprintf("%s_timeline_%d", project.Name, time.Now().Unix())
+	}
+	format := request.Format
+	if format == "" {
+		format = "mp4"
+	}
+	outputPath := s.storage.GetOutputPath(fmt.Sprintf("%s.%s", outputName, format))
+
+	// Merge all clips
+	s.logger.Info("Merging timeline clips",
+		zap.Int("clipCount", len(tempFiles)),
+		zap.Float64("totalDuration", totalDuration),
+		zap.String("outputPath", outputPath),
+		zap.Bool("needsReencode", needsReencode),
+	)
+
+	mergeProgress := func(progress float64) {
+		// Scale progress: 80-95% for merging (leave room for watermark)
+		scaledProgress := 80 + (progress * 15)
+		if scaledProgress > operation.Progress {
+			operation.Progress = scaledProgress
+		}
+	}
+
+	// Check if watermark is enabled
+	hasWatermark := request.Watermark != nil && request.Watermark.Enabled && request.Watermark.Filename != ""
+
+	var mergeErr error
+	var mergeOutput string
+
+	if hasWatermark {
+		// Merge to temp file first, then apply watermark
+		mergeOutput = s.storage.GetTempPath(fmt.Sprintf("timeline_merged_%s.mp4", uuid.New().String()))
+	} else {
+		mergeOutput = outputPath
+	}
+
+	// Use concat demuxer for FASTEST merge when possible
+	if !needsReencode && !hasWatermark {
+		// Ultra-fast: Use concat demuxer with -c copy (no re-encoding at all)
+		mergeErr = s.ffmpeg.MergeVideosConcatDemuxer(ctx, tempFiles, mergeOutput, mergeProgress)
+	} else if !needsReencode && hasWatermark {
+		// Fast: Use concat demuxer first, then apply watermark to final output
+		concatOutput := s.storage.GetTempPath(fmt.Sprintf("timeline_concat_%s.mp4", uuid.New().String()))
+		mergeErrConcat := s.ffmpeg.MergeVideosConcatDemuxer(ctx, tempFiles, concatOutput, mergeProgress)
+		if mergeErrConcat == nil {
+			// Now apply watermark with re-encoding
+			wmProgress := func(progress float64) {
+				scaledProgress := 95 + (progress * 5)
+				if scaledProgress > operation.Progress {
+					operation.Progress = scaledProgress
+				}
+			}
+			watermarkPath := filepath.Join(s.storage.BasePath(), "watermarks", request.Watermark.Filename)
+			watermarkOpts := ffmpeg.WatermarkOptions{
+				ImagePath: watermarkPath,
+				Position:  request.Watermark.Position,
+				Opacity:   request.Watermark.Opacity,
+				Scale:     request.Watermark.Scale,
+				MarginX:   request.Watermark.MarginX,
+				MarginY:   request.Watermark.MarginY,
+			}
+			mergeErr = s.ffmpeg.ApplyWatermark(ctx, concatOutput, mergeOutput, watermarkOpts, wmProgress)
+			os.Remove(concatOutput)
+		} else {
+			mergeErr = mergeErrConcat
+		}
+	} else {
+		// Slower: Re-encode all clips
+		mergeErr = s.ffmpeg.MergeVideos(ctx, tempFiles, mergeOutput, totalDuration, mergeProgress)
+	}
+
+	// Cleanup temp files
+	s.cleanupTempFiles(tempFiles)
+
+	if mergeErr != nil {
+		if hasWatermark {
+			os.Remove(mergeOutput)
+		}
+		operation.Status = models.OperationStatusFailed
+		operation.Error = fmt.Sprintf("failed to merge clips: %v", mergeErr)
+		return
+	}
+
+	// Apply watermark if enabled
+	if hasWatermark {
+		s.logger.Info("Applying watermark",
+			zap.String("filename", request.Watermark.Filename),
+			zap.String("position", request.Watermark.Position),
+			zap.Float64("opacity", request.Watermark.Opacity),
+		)
+
+		watermarkPath := filepath.Join(s.storage.BasePath(), "watermarks", request.Watermark.Filename)
+
+		// Check watermark file exists
+		if _, err := os.Stat(watermarkPath); os.IsNotExist(err) {
+			os.Remove(mergeOutput)
+			operation.Status = models.OperationStatusFailed
+			operation.Error = "watermark file not found"
+			return
+		}
+
+		watermarkOpts := ffmpeg.WatermarkOptions{
+			ImagePath: watermarkPath,
+			Position:  request.Watermark.Position,
+			Opacity:   request.Watermark.Opacity,
+			Scale:     request.Watermark.Scale,
+			MarginX:   request.Watermark.MarginX,
+			MarginY:   request.Watermark.MarginY,
+		}
+
+		wmProgress := func(progress float64) {
+			// Scale progress: 95-100% for watermark
+			scaledProgress := 95 + (progress * 5)
+			if scaledProgress > operation.Progress {
+				operation.Progress = scaledProgress
+			}
+		}
+
+		// Apply watermark: re-encode merged video with watermark overlay
+		wmErr := s.ffmpeg.CutVideoWithWatermark(ctx, mergeOutput, outputPath, 0, totalDuration, watermarkOpts, wmProgress)
+
+		// Cleanup temp merged file
+		os.Remove(mergeOutput)
+
+		if wmErr != nil {
+			operation.Status = models.OperationStatusFailed
+			operation.Error = fmt.Sprintf("failed to apply watermark: %v", wmErr)
+			return
+		}
+	}
+
+	// Success
+	now := time.Now()
+	operation.Status = models.OperationStatusCompleted
+	operation.Progress = 100
+	operation.CompletedAt = &now
+	operation.OutputFiles = []string{outputPath}
+
+	s.logger.Info("Timeline export completed",
+		zap.String("operationId", operation.ID),
+		zap.String("outputPath", outputPath),
+		zap.Float64("totalDuration", totalDuration),
+	)
+}
+
+// checkCodecCompatibility checks if all videos in a timeline project have compatible codecs
+func (s *OperationService) checkCodecCompatibility(project *models.TimelineProject) (bool, string, error) {
+	if len(project.VideoIDs) <= 1 {
+		return true, "single source", nil
+	}
+
+	var referenceCodec, referenceAudio string
+	var referenceWidth, referenceHeight int
+
+	for i, videoID := range project.VideoIDs {
+		video, err := s.storage.GetVideo(videoID)
+		if err != nil {
+			return false, "", fmt.Errorf("video %s not found", videoID)
+		}
+
+		videoCodec := ""
+		audioCodec := ""
+		for _, stream := range video.Metadata.Streams {
+			if stream.CodecType == "video" && videoCodec == "" {
+				videoCodec = stream.CodecName
+			} else if stream.CodecType == "audio" && audioCodec == "" {
+				audioCodec = stream.CodecName
+			}
+		}
+
+		if i == 0 {
+			referenceCodec = videoCodec
+			referenceAudio = audioCodec
+			referenceWidth = video.Width
+			referenceHeight = video.Height
+			continue
+		}
+
+		// Check compatibility
+		if videoCodec != referenceCodec {
+			return false, fmt.Sprintf("video codec mismatch: %s vs %s", referenceCodec, videoCodec), nil
+		}
+		if audioCodec != referenceAudio {
+			return false, fmt.Sprintf("audio codec mismatch: %s vs %s", referenceAudio, audioCodec), nil
+		}
+		if video.Width != referenceWidth || video.Height != referenceHeight {
+			return false, fmt.Sprintf("resolution mismatch: %dx%d vs %dx%d", referenceWidth, referenceHeight, video.Width, video.Height), nil
+		}
+	}
+
+	return true, "compatible", nil
+}
+
+// cleanupTempFiles removes temporary files
+func (s *OperationService) cleanupTempFiles(files []string) {
+	for _, f := range files {
+		if f != "" {
+			if err := os.Remove(f); err != nil {
+				s.logger.Warn("Failed to cleanup temp file", zap.String("file", f), zap.Error(err))
+			}
+		}
+	}
+}
+
 // cutVideoWithOptionalFilters cuts video with or without filters based on request
 func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inputPath, outputPath string, start, end float64, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) error {
 	// First, cut the video (with crop/manual blur if needed)
@@ -873,6 +1249,46 @@ func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inpu
 
 		if err != nil {
 			return fmt.Errorf("face blur failed: %w", err)
+		}
+	}
+
+	// Apply watermark if requested
+	if s.needsWatermark(request) {
+		watermarkPath := filepath.Join(s.storage.BasePath(), "watermarks", request.Watermark.Filename)
+
+		// Check watermark file exists
+		if _, err := os.Stat(watermarkPath); os.IsNotExist(err) {
+			return fmt.Errorf("watermark file not found: %s", request.Watermark.Filename)
+		}
+
+		s.logger.Info("Applying watermark",
+			zap.String("output", finalOutput),
+			zap.String("watermarkPath", watermarkPath),
+			zap.String("position", request.Watermark.Position),
+			zap.Float64("opacity", request.Watermark.Opacity),
+		)
+
+		watermarkOpts := ffmpeg.WatermarkOptions{
+			ImagePath: watermarkPath,
+			Position:  request.Watermark.Position,
+			Opacity:   request.Watermark.Opacity,
+			Scale:     request.Watermark.Scale,
+			MarginX:   request.Watermark.MarginX,
+			MarginY:   request.Watermark.MarginY,
+		}
+
+		// Apply watermark (use temp file if needed)
+		tempWatermarkOutput := finalOutput + ".watermark_temp.mp4"
+		if err := s.ffmpeg.ApplyWatermark(ctx, finalOutput, tempWatermarkOutput, watermarkOpts, nil); err != nil {
+			return fmt.Errorf("watermark failed: %w", err)
+		}
+
+		// Replace original with watermarked version
+		if err := os.Remove(finalOutput); err != nil {
+			s.logger.Warn("Failed to remove original before watermark", zap.Error(err))
+		}
+		if err := os.Rename(tempWatermarkOutput, finalOutput); err != nil {
+			return fmt.Errorf("failed to rename watermarked output: %w", err)
 		}
 	}
 

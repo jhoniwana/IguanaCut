@@ -82,6 +82,78 @@ export interface Operation {
   completed_at?: string;
 }
 
+// ==================== Multi-Clip Timeline Types ====================
+
+export interface TimelineClip {
+  id: string;
+  source_video_id: string;
+  source_start: number;
+  source_end: number;
+  timeline_position: number;
+  track_index: number;
+  name: string;
+  duration: number;
+}
+
+export interface TimelineProject {
+  id: string;
+  name: string;
+  session_id?: string;
+  video_ids: string[];
+  timeline_clips: TimelineClip[];
+  total_duration: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodecInfo {
+  video_codec: string;
+  audio_codec: string;
+  width: number;
+  height: number;
+  frame_rate: string;
+  sample_rate: number;
+  pixel_format: string;
+}
+
+export interface CodecCompatibility {
+  compatible: boolean;
+  requires_encode: boolean;
+  reason?: string;
+  codecs: CodecInfo[];
+}
+
+export interface BatchUploadResponse {
+  videos: Video[];
+  errors: string[];
+  success: number;
+  failed: number;
+}
+
+export interface WatermarkOptions {
+  enabled: boolean;
+  filename: string;
+  position: string;
+  opacity: number;
+  scale: number;
+  margin_x: number;
+  margin_y: number;
+}
+
+export interface TimelineExportRequest {
+  project_id: string;
+  clip_ids?: string[];
+  output_name?: string;
+  format?: string;
+  force_reencode?: boolean;
+  crop_enabled?: boolean;
+  crop_x?: number;
+  crop_y?: number;
+  crop_width?: number;
+  crop_height?: number;
+  watermark?: WatermarkOptions;
+}
+
 class ApiClient {
   async uploadVideo(file: File) {
     const formData = new FormData();
@@ -93,6 +165,35 @@ class ApiClient {
     });
     if (!response.ok) throw new Error('Upload failed');
     return response.json();
+  }
+
+  // Batch upload multiple videos
+  async batchUpload(files: File[]): Promise<BatchUploadResponse> {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    const response = await fetch('/api/videos/batch-upload', {
+      method: 'POST',
+      headers: { 'X-Session-ID': getSessionId() },
+      body: formData,
+    });
+    if (!response.ok) throw new Error('Batch upload failed');
+    return response.json();
+  }
+
+  // Check codec compatibility for merging
+  async checkCodecCompatibility(videoIds: string[]): Promise<CodecCompatibility> {
+    const response = await fetch('/api/videos/check-compat', {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify({ video_ids: videoIds }),
+    });
+    if (!response.ok) throw new Error('Compatibility check failed');
+    return response.json();
+  }
+
+  // Get video thumbnail
+  getThumbnailUrl(videoId: string, timestamp = 0): string {
+    return `/api/videos/${videoId}/thumbnail?t=${timestamp}&session=${getSessionId()}`;
   }
 
   async startDownload(url: string, format = 'best'): Promise<Download> {
@@ -180,6 +281,147 @@ class ApiClient {
     });
     if (!response.ok) throw new Error('Screenshot capture failed');
     return response.json();
+  }
+
+  // ==================== Timeline API ====================
+
+  async createTimelineProject(name: string, videoIds: string[] = []): Promise<TimelineProject> {
+    const response = await fetch('/api/timeline/projects', {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify({ name, video_ids: videoIds }),
+    });
+    if (!response.ok) throw new Error('Failed to create timeline project');
+    return response.json();
+  }
+
+  async getTimelineProject(projectId: string): Promise<TimelineProject> {
+    const response = await fetch(`/api/timeline/projects/${projectId}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to get timeline project');
+    return response.json();
+  }
+
+  async listTimelineProjects(): Promise<TimelineProject[]> {
+    const response = await fetch('/api/timeline/projects', {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to list timeline projects');
+    return response.json();
+  }
+
+  async updateTimelineProject(projectId: string, data: Partial<TimelineProject>): Promise<TimelineProject> {
+    const response = await fetch(`/api/timeline/projects/${projectId}`, {
+      method: 'PUT',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update timeline project');
+    return response.json();
+  }
+
+  async deleteTimelineProject(projectId: string): Promise<void> {
+    const response = await fetch(`/api/timeline/projects/${projectId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete timeline project');
+  }
+
+  async addTimelineClip(projectId: string, clip: Omit<TimelineClip, 'id' | 'duration'>): Promise<TimelineClip> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/clips`, {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify(clip),
+    });
+    if (!response.ok) throw new Error('Failed to add clip');
+    return response.json();
+  }
+
+  async updateTimelineClip(projectId: string, clipId: string, clip: Partial<TimelineClip>): Promise<TimelineClip> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/clips/${clipId}`, {
+      method: 'PUT',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify(clip),
+    });
+    if (!response.ok) throw new Error('Failed to update clip');
+    return response.json();
+  }
+
+  async deleteTimelineClip(projectId: string, clipId: string): Promise<void> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/clips/${clipId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete clip');
+  }
+
+  async reorderTimelineClips(projectId: string, clipIds: string[]): Promise<TimelineProject> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/reorder`, {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify({ clip_ids: clipIds }),
+    });
+    if (!response.ok) throw new Error('Failed to reorder clips');
+    return response.json();
+  }
+
+  async addVideoSource(projectId: string, videoId: string): Promise<{ video: Video }> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/sources`, {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify({ video_id: videoId }),
+    });
+    if (!response.ok) throw new Error('Failed to add video source');
+    return response.json();
+  }
+
+  async removeVideoSource(projectId: string, videoId: string): Promise<void> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/sources/${videoId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to remove video source');
+  }
+
+  async exportTimeline(projectId: string, options: TimelineExportRequest): Promise<Operation> {
+    const response = await fetch(`/api/timeline/projects/${projectId}/export`, {
+      method: 'POST',
+      headers: getHeaders('application/json'),
+      body: JSON.stringify(options),
+    });
+    if (!response.ok) throw new Error('Failed to start timeline export');
+    return response.json();
+  }
+
+  // ==================== Watermark API ====================
+
+  async uploadWatermark(file: File): Promise<{ id: string; filename: string; url: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('/api/watermarks/upload', {
+      method: 'POST',
+      headers: { 'X-Session-ID': getSessionId() },
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(error.error || 'Watermark upload failed');
+    }
+    return response.json();
+  }
+
+  async deleteWatermark(filename: string): Promise<void> {
+    const response = await fetch(`/api/watermarks/${filename}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete watermark');
+  }
+
+  getWatermarkUrl(filename: string): string {
+    return `/api/watermarks/${filename}`;
   }
 
   // Get current session ID (for display or debugging)

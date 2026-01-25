@@ -190,6 +190,8 @@ type ExportRequest struct {
 	BlurConfirmedSignatures [][]float64       `json:"blur_confirmed_signatures,omitempty"`  // User-confirmed face signatures
 	BlurPerClip             map[string]bool   `json:"blur_per_clip,omitempty"`              // Per-clip blur enabled/disabled
 	BlurStyle               *BlurStyleConfig  `json:"blur_style,omitempty"`                 // Blur style configuration
+	// Watermark settings
+	Watermark *WatermarkOptions `json:"watermark,omitempty"` // Watermark overlay configuration
 }
 
 // PreviewRequest represents a preview generation request
@@ -232,3 +234,91 @@ const (
 	DownloadStatusFailed      DownloadStatus = "failed"
 	DownloadStatusCancelled   DownloadStatus = "cancelled"
 )
+
+// ==================== Multi-Clip Timeline Models ====================
+
+// TimelineClip represents a clip positioned on the timeline
+type TimelineClip struct {
+	ID               string  `json:"id"`
+	SourceVideoID    string  `json:"source_video_id"`
+	SourceStart      float64 `json:"source_start"`
+	SourceEnd        float64 `json:"source_end"`
+	TimelinePosition float64 `json:"timeline_position"`
+	TrackIndex       int     `json:"track_index"`
+	Name             string  `json:"name"`
+	Duration         float64 `json:"duration"` // Computed: SourceEnd - SourceStart
+}
+
+// TimelineProject represents a multi-source timeline project
+type TimelineProject struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	SessionID     string         `json:"session_id,omitempty"`
+	VideoIDs      []string       `json:"video_ids"`       // Multiple video sources
+	TimelineClips []TimelineClip `json:"timeline_clips"`  // Clips on timeline
+	TotalDuration float64        `json:"total_duration"`  // Computed total
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+}
+
+// SourceVideo represents a video source with its metadata for the timeline
+type SourceVideo struct {
+	Video     *Video `json:"video"`
+	Thumbnail string `json:"thumbnail,omitempty"` // Base64 or URL
+	Color     string `json:"color,omitempty"`     // Color for timeline clips
+}
+
+// CodecInfo contains codec information for compatibility checking
+type CodecInfo struct {
+	VideoCodec  string `json:"video_codec"`
+	AudioCodec  string `json:"audio_codec"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	FrameRate   string `json:"frame_rate"`
+	SampleRate  int    `json:"sample_rate"`
+	PixelFormat string `json:"pixel_format"`
+}
+
+// CodecCompatibility represents the result of codec compatibility check
+type CodecCompatibility struct {
+	Compatible     bool        `json:"compatible"`
+	RequiresEncode bool        `json:"requires_encode"`
+	Reason         string      `json:"reason,omitempty"`
+	Codecs         []CodecInfo `json:"codecs"`
+}
+
+// BatchUploadResponse represents the response for batch upload
+type BatchUploadResponse struct {
+	Videos  []*Video `json:"videos"`
+	Errors  []string `json:"errors,omitempty"`
+	Success int      `json:"success"`
+	Failed  int      `json:"failed"`
+}
+
+// WatermarkOptions contains watermark configuration for export
+type WatermarkOptions struct {
+	Enabled  bool    `json:"enabled"`
+	Filename string  `json:"filename"`
+	Position string  `json:"position"` // "top-left", "top-right", "bottom-left", "bottom-right", "center"
+	Opacity  float64 `json:"opacity"`
+	Scale    float64 `json:"scale"`
+	MarginX  int     `json:"margin_x"`
+	MarginY  int     `json:"margin_y"`
+}
+
+// TimelineExportRequest represents a request to export a timeline project
+type TimelineExportRequest struct {
+	ProjectID      string   `json:"project_id"`
+	ClipIDs        []string `json:"clip_ids,omitempty"` // If empty, export all
+	OutputName     string   `json:"output_name,omitempty"`
+	Format         string   `json:"format,omitempty"`
+	ForceReencode  bool     `json:"force_reencode,omitempty"`
+	// Inherited from ExportRequest for effects
+	CropEnabled bool   `json:"crop_enabled,omitempty"`
+	CropX       int    `json:"crop_x,omitempty"`
+	CropY       int    `json:"crop_y,omitempty"`
+	CropWidth   int    `json:"crop_width,omitempty"`
+	CropHeight  int    `json:"crop_height,omitempty"`
+	// Watermark settings
+	Watermark *WatermarkOptions `json:"watermark,omitempty"`
+}

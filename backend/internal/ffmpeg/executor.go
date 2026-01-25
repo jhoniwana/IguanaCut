@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -163,6 +164,20 @@ func (e *Executor) CutVideo(ctx context.Context, input, output string, start, en
 	// This ensures no freezing at segment boundaries
 	// CRF 17 is visually nearly lossless
 	return e.accurateCut(ctx, input, output, start, duration, onProgress)
+}
+
+// CutVideoLossless cuts a video segment using stream copy (-c copy)
+// Much faster than re-encoding, but may have slight inaccuracies at non-keyframe boundaries
+func (e *Executor) CutVideoLossless(ctx context.Context, input, output string, start, end float64, onProgress ProgressCallback) error {
+	duration := end - start
+
+	e.logger.Info("Cutting segment lossless (stream copy)",
+		zap.Float64("start", start),
+		zap.Float64("end", end),
+		zap.Float64("duration", duration),
+	)
+
+	return e.regularCut(ctx, input, output, start, end, onProgress)
 }
 
 // accurateCut performs frame-accurate cutting by re-encoding
@@ -412,6 +427,72 @@ func (e *Executor) MergeVideos(ctx context.Context, inputs []string, output stri
 	return e.Execute(ctx, ExecuteOptions{
 		Args:       args,
 		Duration:   totalDuration,
+		OnProgress: onProgress,
+	})
+}
+
+// MergeVideosConcatDemuxer merges multiple video files using concat demuxer
+// This is the FASTEST method for videos with compatible codecs (no re-encoding)
+func (e *Executor) MergeVideosConcatDemuxer(ctx context.Context, inputs []string, output string, onProgress ProgressCallback) error {
+	if len(inputs) == 0 {
+		return fmt.Errorf("no input files provided")
+	}
+
+	if len(inputs) == 1 {
+		// Just copy the single file
+		input, err := os.ReadFile(inputs[0])
+		if err != nil {
+			return fmt.Errorf("failed to read input file: %w", err)
+		}
+		return os.WriteFile(output, input, 0644)
+	}
+
+	e.logger.Info("Fast merging with concat demuxer",
+		zap.Int("segmentCount", len(inputs)),
+	)
+
+	// Create concat file content and write to a temp file (more reliable than stdin)
+	concatFile := output + ".concat.txt"
+	var concatContent bytes.Buffer
+	for _, input := range inputs {
+		// Ensure paths are absolute and properly escaped
+		absPath, err := filepath.Abs(input)
+		if err != nil {
+			e.logger.Warn("Failed to get absolute path, using relative", zap.String("input", input), zap.Error(err))
+			absPath = input
+		}
+		// Escape special characters in path
+		escapedPath := strings.ReplaceAll(absPath, "'", "'\\''")
+		concatContent.WriteString(fmt.Sprintf("file '%s'\n", escapedPath))
+	}
+
+	// Write concat list to file
+	if err := os.WriteFile(concatFile, concatContent.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to create concat file: %w", err)
+	}
+	defer os.Remove(concatFile)
+
+	// Verify all input files exist and are readable
+	for _, input := range inputs {
+		if _, err := os.Stat(input); os.IsNotExist(err) {
+			return fmt.Errorf("input file does not exist: %s", input)
+		}
+	}
+
+	// Use concat demuxer with -c copy for ultra-fast merge
+	args := []string{
+		"-hide_banner",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", concatFile,
+		"-c", "copy",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+
+	return e.Execute(ctx, ExecuteOptions{
+		Args:       args,
 		OnProgress: onProgress,
 	})
 }
@@ -912,6 +993,238 @@ func (e *Executor) CutVideoWithFilters(ctx context.Context, input, output string
 		"-y",
 		output,
 	)
+
+	return e.Execute(ctx, ExecuteOptions{
+		Args:       args,
+		Duration:   duration,
+		OnProgress: onProgress,
+	})
+}
+
+// WatermarkOptions contains watermark overlay settings
+type WatermarkOptions struct {
+	ImagePath string  // Path to watermark PNG image
+	Position  string  // Position: "top-left", "top-right", "bottom-left", "bottom-right", "center"
+	Opacity   float64 // Opacity 0.0-1.0
+	Scale     float64 // Scale factor for watermark size (1.0 = original)
+	MarginX   int     // Horizontal margin from edge
+	MarginY   int     // Vertical margin from edge
+}
+
+// CutVideoWithWatermark cuts a video segment and applies a watermark overlay
+func (e *Executor) CutVideoWithWatermark(ctx context.Context, input, output string, start, end float64, watermark WatermarkOptions, onProgress ProgressCallback) error {
+	duration := end - start
+
+	e.logger.Info("Cutting segment with watermark",
+		zap.Float64("start", start),
+		zap.Float64("end", end),
+		zap.String("watermarkPath", watermark.ImagePath),
+		zap.String("position", watermark.Position),
+		zap.Float64("opacity", watermark.Opacity),
+	)
+
+	// Build the filter complex for watermark overlay
+	filterComplex := e.buildWatermarkFilter(watermark)
+
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-i", watermark.ImagePath,
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-filter_complex", filterComplex,
+		"-map", "[out]",
+		"-map", "0:a?",
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+
+	// Try VAAPI first for faster encoding
+	argsVaapi := []string{
+		"-hide_banner",
+		"-hwaccel", "vaapi",
+		"-hwaccel_device", "/dev/dri/renderD128",
+		"-ss", fmt.Sprintf("%.6f", start),
+		"-i", input,
+		"-i", watermark.ImagePath,
+		"-t", fmt.Sprintf("%.6f", duration),
+		"-filter_complex", filterComplex + ",format=nv12,hwupload",
+		"-map", "[out]",
+		"-map", "0:a?",
+		"-c:v", "h264_vaapi",
+		"-qp", "18",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+
+	err := e.Execute(ctx, ExecuteOptions{
+		Args:       argsVaapi,
+		Duration:   duration,
+		OnProgress: onProgress,
+	})
+
+	// Fallback to CPU if VAAPI fails
+	if err != nil {
+		e.logger.Warn("VAAPI watermark encoding failed, falling back to CPU", zap.Error(err))
+		return e.Execute(ctx, ExecuteOptions{
+			Args:       args,
+			Duration:   duration,
+			OnProgress: onProgress,
+		})
+	}
+
+	return nil
+}
+
+// buildWatermarkFilter creates the FFmpeg filter complex string for watermark overlay
+func (e *Executor) buildWatermarkFilter(opts WatermarkOptions) string {
+	// Default values
+	if opts.Opacity <= 0 {
+		opts.Opacity = 1.0
+	}
+	if opts.Opacity > 1.0 {
+		opts.Opacity = 1.0
+	}
+	if opts.Scale <= 0 {
+		opts.Scale = 1.0
+	}
+	if opts.MarginX <= 0 {
+		opts.MarginX = 10
+	}
+	if opts.MarginY <= 0 {
+		opts.MarginY = 10
+	}
+
+	// Build watermark preparation filter (scale and opacity)
+	var wmFilter string
+	if opts.Scale != 1.0 {
+		// Scale the watermark
+		wmFilter = fmt.Sprintf("[1:v]scale=iw*%.2f:ih*%.2f", opts.Scale, opts.Scale)
+	} else {
+		wmFilter = "[1:v]null"
+	}
+
+	// Add opacity if not fully opaque
+	if opts.Opacity < 1.0 {
+		wmFilter += fmt.Sprintf(",format=rgba,colorchannelmixer=aa=%.2f", opts.Opacity)
+	}
+
+	wmFilter += "[wm]"
+
+	// Build overlay position
+	var overlayPos string
+	mx := opts.MarginX
+	my := opts.MarginY
+
+	switch opts.Position {
+	case "top-left":
+		overlayPos = fmt.Sprintf("overlay=%d:%d", mx, my)
+	case "top-right":
+		overlayPos = fmt.Sprintf("overlay=main_w-overlay_w-%d:%d", mx, my)
+	case "bottom-left":
+		overlayPos = fmt.Sprintf("overlay=%d:main_h-overlay_h-%d", mx, my)
+	case "bottom-right":
+		overlayPos = fmt.Sprintf("overlay=main_w-overlay_w-%d:main_h-overlay_h-%d", mx, my)
+	case "center":
+		overlayPos = "overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2"
+	default:
+		// Default to bottom-right
+		overlayPos = fmt.Sprintf("overlay=main_w-overlay_w-%d:main_h-overlay_h-%d", mx, my)
+	}
+
+	// Combine filters
+	return fmt.Sprintf("%s;[0:v][wm]%s[out]", wmFilter, overlayPos)
+}
+
+// MergeVideosWithWatermark merges multiple video segments and applies watermark to the final output
+func (e *Executor) MergeVideosWithWatermark(ctx context.Context, inputs []string, output string, totalDuration float64, watermark WatermarkOptions, onProgress ProgressCallback) error {
+	// First merge without watermark to a temp file
+	tempOutput := output + ".temp.mp4"
+	defer os.Remove(tempOutput)
+
+	if err := e.MergeVideos(ctx, inputs, tempOutput, totalDuration, func(p float64) {
+		if onProgress != nil {
+			onProgress(p * 0.7) // Merge is 70% of work
+		}
+	}); err != nil {
+		return fmt.Errorf("failed to merge videos: %w", err)
+	}
+
+	// Apply watermark to merged video
+	filterComplex := e.buildWatermarkFilter(watermark)
+
+	args := []string{
+		"-hide_banner",
+		"-i", tempOutput,
+		"-i", watermark.ImagePath,
+		"-filter_complex", filterComplex,
+		"-map", "[out]",
+		"-map", "0:a?",
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
+
+	return e.Execute(ctx, ExecuteOptions{
+		Args:     args,
+		Duration: totalDuration,
+		OnProgress: func(p float64) {
+			if onProgress != nil {
+				onProgress(0.7 + p*0.3) // Watermark is 30% of work
+			}
+		},
+	})
+}
+
+// ApplyWatermark applies a watermark to an existing video
+func (e *Executor) ApplyWatermark(ctx context.Context, input, output string, watermark WatermarkOptions, onProgress ProgressCallback) error {
+	// Get input duration for progress reporting
+	info, err := e.Probe(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to probe input: %w", err)
+	}
+
+	// Parse duration from probe result
+	var duration float64
+	if info.Format.Duration != "" {
+		fmt.Sscanf(info.Format.Duration, "%f", &duration)
+	}
+
+	filterComplex := e.buildWatermarkFilter(watermark)
+
+	args := []string{
+		"-hide_banner",
+		"-i", input,
+		"-i", watermark.ImagePath,
+		"-filter_complex", filterComplex,
+		"-map", "[out]",
+		"-map", "0:a?",
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", "17",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "192k",
+		"-movflags", "+faststart",
+		"-y",
+		output,
+	}
 
 	return e.Execute(ctx, ExecuteOptions{
 		Args:       args,

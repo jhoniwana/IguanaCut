@@ -133,8 +133,8 @@ func (s *VideoService) CaptureScreenshot(videoID string, timestamp float64) (str
 		return "", fmt.Errorf("video not found: %w", err)
 	}
 
-	// Generate screenshot filename
-	screenshotID := generateVideoID()
+	// Generate screenshot filename with .jpg extension (FFmpeg needs extension to determine format)
+	screenshotID := generateVideoID() + ".jpg"
 	screenshotPath := s.storage.GetScreenshotPath(screenshotID)
 
 	// Ensure screenshots directory exists

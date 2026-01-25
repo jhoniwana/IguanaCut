@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     ports:
-      - "8080:8082"
+      - "8080:8080"
     volumes:
       - losslesscut_data:/var/losslesscut
       - ./config:/etc/losslesscut
@@ -21,7 +21,7 @@ services:
       - LIBVA_DRIVER_NAME=iHD
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3

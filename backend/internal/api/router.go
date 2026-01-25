@@ -23,7 +23,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = cfg.Server.CorsOrigins
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "X-Session-ID"}
 	router.Use(cors.New(corsConfig))
 
 	// Health check
@@ -78,12 +78,46 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			videoHandler := handlers.NewVideoHandler(services, cfg, logger)
 			videos.GET("", videoHandler.List)
 			videos.POST("/upload", videoHandler.Upload)
+			videos.POST("/batch-upload", videoHandler.BatchUpload)
+			videos.POST("/check-compat", videoHandler.CheckCodecCompatibility)
 			videos.POST("/download", videoHandler.Download)
 			videos.GET("/:id/stream", videoHandler.Stream)
 			videos.GET("/:id/waveform", videoHandler.Waveform)
+			videos.GET("/:id/thumbnail", videoHandler.Thumbnail)
 			videos.POST("/:id/screenshot", videoHandler.Screenshot)
 			videos.POST("/:id/detect-faces", videoHandler.DetectFaces)
 			videos.DELETE("/:id", videoHandler.Delete)
+		}
+
+		// Watermark endpoints
+		watermarks := api.Group("/watermarks")
+		{
+			videoHandler := handlers.NewVideoHandler(services, cfg, logger)
+			watermarks.POST("/upload", videoHandler.WatermarkUpload)
+			watermarks.GET("/:filename", videoHandler.WatermarkServe)
+			watermarks.DELETE("/:filename", videoHandler.WatermarkDelete)
+		}
+
+		// Timeline endpoints (Multi-clip editing)
+		timeline := api.Group("/timeline")
+		{
+			timelineHandler := handlers.NewTimelineHandler(services, logger)
+			// Projects
+			timeline.POST("/projects", timelineHandler.CreateProject)
+			timeline.GET("/projects", timelineHandler.ListProjects)
+			timeline.GET("/projects/:id", timelineHandler.GetProject)
+			timeline.PUT("/projects/:id", timelineHandler.UpdateProject)
+			timeline.DELETE("/projects/:id", timelineHandler.DeleteProject)
+			// Clips
+			timeline.POST("/projects/:id/clips", timelineHandler.AddClip)
+			timeline.PUT("/projects/:id/clips/:clipId", timelineHandler.UpdateClip)
+			timeline.DELETE("/projects/:id/clips/:clipId", timelineHandler.DeleteClip)
+			timeline.POST("/projects/:id/reorder", timelineHandler.ReorderClips)
+			// Sources
+			timeline.POST("/projects/:id/sources", timelineHandler.AddVideoSource)
+			timeline.DELETE("/projects/:id/sources/:videoId", timelineHandler.RemoveVideoSource)
+			// Export
+			timeline.POST("/projects/:id/export", timelineHandler.Export)
 		}
 
 		// Screenshot downloads

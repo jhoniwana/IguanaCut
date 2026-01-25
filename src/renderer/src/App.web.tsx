@@ -18,6 +18,7 @@ import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload } 
 import { MdBlurOn } from 'react-icons/md';
 import { IoMdCloudDownload } from 'react-icons/io';
 import VideoEditor from './components/VideoEditor';
+import MultiSourceEditor from './components/MultiSourceEditor';
 
 // Import Gemstone Inc logo
 import gemstonelogo from './assets/logo.png';
@@ -54,6 +55,7 @@ interface VideoFile {
 
 export default function App() {
   const [showEditor, setShowEditor] = useState(false);
+  const [showMultiSourceEditor, setShowMultiSourceEditor] = useState(false);
   const [showFileManager, setShowFileManager] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
@@ -484,6 +486,31 @@ export default function App() {
           >
             <FiLink size={22} />
             Descargar desde URL
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(0, 255, 136, 0.4)' }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowMultiSourceEditor(true)}
+            style={{
+              background: 'linear-gradient(135deg, #00FF88 0%, #00E5FF 100%)',
+              color: '#000',
+              padding: '16px 32px',
+              borderRadius: '9999px',
+              fontSize: '15px',
+              fontWeight: '600',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              boxShadow: '0 6px 25px rgba(0, 255, 136, 0.3)',
+              transition: 'box-shadow 0.2s ease',
+            }}
+          >
+            <IoMdFilm size={22} />
+            Multi-Source Editor
           </motion.button>
 
           <motion.button
@@ -1324,6 +1351,26 @@ export default function App() {
             }}
             initialVideoId={selectedVideoId}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMultiSourceEditor && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 300,
+            }}
+          >
+            <MultiSourceEditor
+              onClose={() => setShowMultiSourceEditor(false)}
+              initialVideoId={null}
+            />
+          </motion.div>
         )}
       </AnimatePresence>
 

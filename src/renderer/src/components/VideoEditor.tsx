@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
-import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove } from 'react-icons/fi';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove, FiImage } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit, MdBlurOn } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
 import IntroOutroSelector from './IntroOutroSelector';
 import CropSelector, { CropConfig } from './CropSelector';
 import BlurRegionSelector, { BlurConfig, ClipBlurZone } from './BlurRegionSelector';
+import WatermarkSettings, { WatermarkConfig, getDefaultWatermarkConfig } from './WatermarkSettings';
 
 // Import Gemstone Inc logo
 import gemstonelogo from '../assets/logo.png';
@@ -93,6 +94,10 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
 
   // Export options
   const [exportSeparate, setExportSeparate] = useState(false); // false = merged, true = separate files
+
+  // Watermark configuration
+  const [watermarkConfig, setWatermarkConfig] = useState<WatermarkConfig>(getDefaultWatermarkConfig());
+  const [showWatermarkSettings, setShowWatermarkSettings] = useState(false);
 
   // Preview segments mode
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -786,6 +791,16 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           emoji: blurConfig.blurStyle.emoji,
           imageData: blurConfig.blurStyle.imageData,
         } : undefined,
+        // Watermark settings
+        watermark: watermarkConfig.enabled && watermarkConfig.filename ? {
+          enabled: true,
+          filename: watermarkConfig.filename,
+          position: watermarkConfig.position,
+          opacity: watermarkConfig.opacity,
+          scale: watermarkConfig.scale,
+          margin_x: watermarkConfig.marginX,
+          margin_y: watermarkConfig.marginY,
+        } : undefined,
       });
       setCurrentOperation(op);
     } catch { setIsExporting(false); setExportStartTime(null); }
@@ -1394,8 +1409,47 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                       />
                     </div>
 
+                    {/* Watermark Section */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <button
+                        onClick={() => setShowWatermarkSettings(true)}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px 14px',
+                          background: watermarkConfig.enabled ? `${colors.accent}20` : colors.card,
+                          border: `1px solid ${watermarkConfig.enabled ? colors.accent : colors.border}`,
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          color: colors.text,
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <FiImage size={18} color={watermarkConfig.enabled ? colors.accent : colors.textSecondary} />
+                          <span>Marca de Agua</span>
+                        </div>
+                        {watermarkConfig.enabled && (
+                          <span style={{
+                            background: colors.accent,
+                            color: '#000',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '700',
+                          }}>
+                            ON
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
                     {/* Quick stats */}
-                    {(cropConfig.enabled || blurConfig.mode === 'auto') && (
+                    {(cropConfig.enabled || blurConfig.mode === 'auto' || watermarkConfig.enabled) && (
                       <div style={{
                         background: colors.card,
                         borderRadius: '10px',
@@ -1434,6 +1488,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                               gap: '4px',
                             }}>
                               <MdBlurOn size={12} /> CENSURA
+                            </span>
+                          )}
+                          {watermarkConfig.enabled && (
+                            <span style={{
+                              background: colors.accent,
+                              color: '#000',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}>
+                              <FiImage size={12} /> MARCA
                             </span>
                           )}
                         </div>
@@ -1704,6 +1773,43 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     <MdBlurOn size={16} />
                     Censura Auto Activa
                   </div>
+                )}
+
+                {/* Watermark preview overlay */}
+                {watermarkConfig.enabled && watermarkConfig.imageUrl && (
+                  <img
+                    src={watermarkConfig.imageUrl}
+                    alt="Watermark preview"
+                    style={{
+                      position: 'absolute',
+                      pointerEvents: 'none',
+                      opacity: watermarkConfig.opacity,
+                      width: `${watermarkConfig.scale * 15}%`,
+                      maxWidth: '30%',
+                      zIndex: 20,
+                      ...(watermarkConfig.position === 'top-left' && {
+                        top: watermarkConfig.marginY,
+                        left: watermarkConfig.marginX,
+                      }),
+                      ...(watermarkConfig.position === 'top-right' && {
+                        top: watermarkConfig.marginY,
+                        right: watermarkConfig.marginX,
+                      }),
+                      ...(watermarkConfig.position === 'bottom-left' && {
+                        bottom: watermarkConfig.marginY,
+                        left: watermarkConfig.marginX,
+                      }),
+                      ...(watermarkConfig.position === 'bottom-right' && {
+                        bottom: watermarkConfig.marginY,
+                        right: watermarkConfig.marginX,
+                      }),
+                      ...(watermarkConfig.position === 'center' && {
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                      }),
+                    }}
+                  />
                 )}
               </div>
 
@@ -2977,6 +3083,15 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Watermark Settings Modal */}
+      {showWatermarkSettings && (
+        <WatermarkSettings
+          config={watermarkConfig}
+          onChange={setWatermarkConfig}
+          onClose={() => setShowWatermarkSettings(false)}
+        />
       )}
 
       {/* CSS Animation */}

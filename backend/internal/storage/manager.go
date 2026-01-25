@@ -51,6 +51,11 @@ func (m *Manager) Initialize() error {
 	return nil
 }
 
+// BasePath returns the storage base path
+func (m *Manager) BasePath() string {
+	return m.basePath
+}
+
 // UploadsDir returns the uploads directory path
 func (m *Manager) UploadsDir() string {
 	return filepath.Join(m.basePath, "uploads")

@@ -314,6 +314,8 @@ func (s *DownloadService) runDirectDownload(download *models.Download, req Downl
 	video.OriginalURL = download.URL
 
 	download.VideoID = video.ID
+	download.Duration = video.Duration // Pass duration to download status
+	download.Title = video.FileName
 	download.Status = models.DownloadStatusCompleted
 	download.Progress = 100.0
 	s.storage.UpdateDownload(download)
@@ -322,6 +324,7 @@ func (s *DownloadService) runDirectDownload(download *models.Download, req Downl
 		zap.String("id", download.ID),
 		zap.String("file", outputPath),
 		zap.String("video_id", video.ID),
+		zap.Float64("duration", video.Duration),
 	)
 
 	// Clean up from memory
@@ -561,6 +564,8 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 	video.OriginalURL = download.URL
 
 	download.VideoID = video.ID
+	download.Duration = video.Duration // Pass duration to download status
+	download.Title = video.FileName
 	download.Status = models.DownloadStatusCompleted
 	download.Progress = 100.0
 	s.storage.UpdateDownload(download)
@@ -569,6 +574,7 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 		zap.String("id", download.ID),
 		zap.String("file", downloadedFile),
 		zap.String("video_id", video.ID),
+		zap.Float64("duration", video.Duration),
 	)
 
 	// Clean up from memory
