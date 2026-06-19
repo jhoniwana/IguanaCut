@@ -79,12 +79,10 @@ export default function SourcePanel({
       const fileArray = Array.from(files);
 
       if (fileArray.length === 1) {
-        // Single file upload
-        const result = await apiClient.uploadVideo(fileArray[0]);
+        const result = await apiClient.uploadVideo(fileArray[0], setUploadProgress);
         onSourceAdd([result.video]);
       } else {
-        // Batch upload
-        const result = await apiClient.batchUpload(fileArray);
+        const result = await apiClient.batchUpload(fileArray, setUploadProgress);
         if (result.videos.length > 0) {
           onSourceAdd(result.videos);
         }

@@ -41,3 +41,6 @@ web
 
 # InsightFace models
 .insightface/
+
+# Runtime data
+storage/

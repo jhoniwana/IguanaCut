@@ -155,29 +155,42 @@ export interface TimelineExportRequest {
 }
 
 class ApiClient {
-  async uploadVideo(file: File) {
+  private uploadWithProgress(
+    url: string,
+    formData: FormData,
+    onProgress?: (pct: number) => void,
+  ): Promise<XMLHttpRequest> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url)
+      xhr.setRequestHeader('X-Session-ID', getSessionId())
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr)
+        else reject(new Error(`Upload failed: ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.send(formData)
+    })
+  }
+
+  async uploadVideo(file: File, onProgress?: (pct: number) => void) {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch('/api/videos/upload', {
-      method: 'POST',
-      headers: { 'X-Session-ID': getSessionId() },
-      body: formData,
-    });
-    if (!response.ok) throw new Error('Upload failed');
-    return response.json();
+    const xhr = await this.uploadWithProgress('/api/videos/upload', formData, onProgress)
+    return JSON.parse(xhr.responseText)
   }
 
   // Batch upload multiple videos
-  async batchUpload(files: File[]): Promise<BatchUploadResponse> {
+  async batchUpload(files: File[], onProgress?: (pct: number) => void): Promise<BatchUploadResponse> {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
-    const response = await fetch('/api/videos/batch-upload', {
-      method: 'POST',
-      headers: { 'X-Session-ID': getSessionId() },
-      body: formData,
-    });
-    if (!response.ok) throw new Error('Batch upload failed');
-    return response.json();
+    const xhr = await this.uploadWithProgress('/api/videos/batch-upload', formData, onProgress)
+    return JSON.parse(xhr.responseText)
   }
 
   // Check codec compatibility for merging

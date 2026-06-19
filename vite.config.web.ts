@@ -25,11 +25,11 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to Go backend during development
       '/api': {
-        target: 'http://localhost:80',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:80',
+        target: 'ws://localhost:8080',
         ws: true,
       },
     },
