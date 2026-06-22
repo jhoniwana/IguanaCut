@@ -4,8 +4,11 @@
 *.dll
 *.so
 *.dylib
-server
-losslesscut-server
+/server
+/losslesscut-server
+/ffmpeg-static
+/ffprobe-static
+*.old
 
 # Test binary
 *.test

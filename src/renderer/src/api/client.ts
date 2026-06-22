@@ -264,6 +264,14 @@ class ApiClient {
     return response.json();
   }
 
+  async getProject(id: string): Promise<Project> {
+    const response = await fetch(`/api/projects/${id}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Project not found');
+    return response.json();
+  }
+
   async exportProject(projectId: string, options: any): Promise<Operation> {
     const response = await fetch(`/api/projects/${projectId}/export`, {
       method: 'POST',

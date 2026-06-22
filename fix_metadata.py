@@ -44,20 +44,60 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         else:
             data = resp.read()
             if self.command == "POST" and self.path == "/api/videos/upload" and status == 201:
-                try:
-                    video = json.loads(data).get("video")
-                    if video and video.get("id"):
-                        p = os.path.join(VIDEOS_DIR, f"{video['id']}.json")
-                        with open(p, "w") as f:
-                            json.dump(video, f, indent=2, default=str)
-                        print(f"[fix] saved metadata for {video['id']}")
-                except Exception as e:
-                    print(f"[fix] error: {e}")
+                self._save_metadata(data)
+            # Also create metadata for completed yt-dlp downloads
+            if (self.command == "GET" and self.path.startswith("/api/downloads/")
+                    and status == 200):
+                self._fix_download_metadata(data)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
     do_GET=do_POST=do_PUT=do_DELETE=do_HEAD=do_PATCH=do_ANY
+
+    def _save_metadata(self, data):
+        try:
+            video = json.loads(data).get("video")
+            if video and video.get("id"):
+                p = os.path.join(VIDEOS_DIR, f"{video['id']}.json")
+                with open(p, "w") as f:
+                    json.dump(video, f, indent=2, default=str)
+                print(f"[fix] saved metadata for {video['id']} (upload)")
+        except Exception as e:
+            print(f"[fix] error: {e}")
+
+    def _fix_download_metadata(self, data):
+        """Create video metadata when a download completes."""
+        try:
+            dl = json.loads(data)
+            if dl.get("status") == "completed" and dl.get("video_id") and dl.get("file_path"):
+                vid = dl["video_id"]
+                fpath = dl["file_path"]
+                # Don't overwrite if already saved
+                p = os.path.join(VIDEOS_DIR, f"{vid}.json")
+                if os.path.exists(p):
+                    return
+                fname = os.path.basename(fpath)
+                fsize = os.path.getsize(fpath) if os.path.exists(fpath) else 0
+                meta = {
+                    "id": vid,
+                    "file_name": fname,
+                    "file_path": fpath,
+                    "file_size": fsize,
+                    "format": os.path.splitext(fname)[1].lstrip("."),
+                    "duration": dl.get("duration", 0),
+                    "width": 0,
+                    "height": 0,
+                    "codec": "",
+                    "created_at": dl.get("created_at", ""),
+                    "original_url": dl.get("url", ""),
+                    "metadata": {}
+                }
+                with open(p, "w") as f:
+                    json.dump(meta, f, indent=2, default=str)
+                print(f"[fix] saved metadata for {vid} (download)")
+        except Exception as e:
+            print(f"[fix] download error: {e}")
 
 from socketserver import ThreadingMixIn
 class ThreadedProxy(ThreadingMixIn, http.server.HTTPServer):

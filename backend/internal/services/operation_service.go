@@ -24,6 +24,7 @@ type OperationService struct {
 	logger     *zap.Logger
 	ffmpeg     *ffmpeg.Executor
 	operations map[string]*models.Operation
+	mu         sync.RWMutex
 }
 
 func NewOperationService(storage *storage.Manager, cfg *config.Config, logger *zap.Logger) *OperationService {
@@ -31,7 +32,7 @@ func NewOperationService(storage *storage.Manager, cfg *config.Config, logger *z
 		storage:    storage,
 		config:     cfg,
 		logger:     logger,
-		ffmpeg:     ffmpeg.NewExecutor(cfg.FFmpeg.Path, "ffprobe", logger),
+		ffmpeg:     ffmpeg.NewExecutor(cfg.FFmpeg.Path, "/home/jhon/lossless/backend/ffprobe-static", logger),
 		operations: make(map[string]*models.Operation),
 	}
 }
@@ -47,7 +48,9 @@ func (s *OperationService) Export(project *models.Project, request models.Export
 	}
 
 	// Store operation
+	s.mu.Lock()
 	s.operations[operation.ID] = operation
+	s.mu.Unlock()
 
 	// Run export in background
 	go s.runExport(operation, project, request)
@@ -563,7 +566,9 @@ func (s *OperationService) mergeVideosWithIntroOutro(ctx context.Context, inputP
 }
 
 func (s *OperationService) GetStatus(operationID string) (*models.Operation, error) {
+	s.mu.RLock()
 	operation, exists := s.operations[operationID]
+	s.mu.RUnlock()
 	if !exists {
 		return nil, fmt.Errorf("operation not found: %s", operationID)
 	}
@@ -582,7 +587,9 @@ func (s *OperationService) GeneratePreview(request models.PreviewRequest) (*mode
 	}
 
 	// Store operation
+	s.mu.Lock()
 	s.operations[operation.ID] = operation
+	s.mu.Unlock()
 
 	// Run preview generation in background
 	go s.runPreviewGeneration(operation, request)
@@ -782,7 +789,9 @@ func (s *OperationService) ExportTimeline(project *models.TimelineProject, reque
 	}
 
 	// Store operation
+	s.mu.Lock()
 	s.operations[operation.ID] = operation
+	s.mu.Unlock()
 
 	// Run export in background
 	go s.runTimelineExport(operation, project, request)
@@ -1167,7 +1176,7 @@ func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inpu
 			}
 		})
 	} else {
-		err = s.ffmpeg.CutVideo(ctx, inputPath, tempOutput, start, end, func(p float64) {
+		err = s.ffmpeg.CutVideoLossless(ctx, inputPath, tempOutput, start, end, func(p float64) {
 			if onProgress != nil {
 				if s.needsAutoBlur(request) {
 					onProgress(p * 0.5) // First 50% for cutting

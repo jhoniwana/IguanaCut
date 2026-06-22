@@ -180,20 +180,17 @@ func (e *Executor) CutVideoLossless(ctx context.Context, input, output string, s
 	return e.regularCut(ctx, input, output, start, end, onProgress)
 }
 
-// accurateCut performs frame-accurate cutting by re-encoding
-// Uses hardware acceleration (VAAPI) for faster encoding with high quality
+// accurateCut performs frame-accurate cutting by re-encoding with CPU libx264.
 func (e *Executor) accurateCut(ctx context.Context, input, output string, start, duration float64, onProgress ProgressCallback) error {
-	// Try VAAPI hardware acceleration first, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
-		"-hwaccel", "vaapi",
-		"-hwaccel_device", "/dev/dri/renderD128",
-		"-ss", fmt.Sprintf("%.6f", start), // Input seeking for speed
+		"-ss", fmt.Sprintf("%.6f", start),
 		"-i", input,
 		"-t", fmt.Sprintf("%.6f", duration),
-		"-vf", "format=nv12,hwupload",
-		"-c:v", "h264_vaapi",
-		"-qp", "18", // Quality similar to CRF 17
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-crf", "17",
+		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "192k",
 		"-movflags", "+faststart",
@@ -201,42 +198,11 @@ func (e *Executor) accurateCut(ctx context.Context, input, output string, start,
 		output,
 	}
 
-	err := e.Execute(ctx, ExecuteOptions{
+	return e.Execute(ctx, ExecuteOptions{
 		Args:       args,
 		Duration:   duration,
 		OnProgress: onProgress,
 	})
-
-	// If VAAPI fails, fallback to CPU encoding
-	if err != nil && strings.Contains(err.Error(), "vaapi") {
-		e.logger.Warn("VAAPI encoding failed, falling back to CPU",
-			zap.Error(err),
-		)
-
-		argsCPU := []string{
-			"-hide_banner",
-			"-ss", fmt.Sprintf("%.6f", start),
-			"-i", input,
-			"-t", fmt.Sprintf("%.6f", duration),
-			"-c:v", "libx264",
-			"-preset", "fast",
-			"-crf", "17",
-			"-pix_fmt", "yuv420p",
-			"-c:a", "aac",
-			"-b:a", "192k",
-			"-movflags", "+faststart",
-			"-y",
-			output,
-		}
-
-		return e.Execute(ctx, ExecuteOptions{
-			Args:       argsCPU,
-			Duration:   duration,
-			OnProgress: onProgress,
-		})
-	}
-
-	return err
 }
 
 // FindKeyframes finds keyframe timestamps in a time range
@@ -282,7 +248,9 @@ func (e *Executor) FindKeyframes(ctx context.Context, input string, startTime, e
 	return keyframes, nil
 }
 
-// regularCut performs a standard lossless cut (may have keyframe issues)
+// regularCut performs a lossless cut using stream copy (-c copy).
+// Uses input seeking (-ss before -i) which is fast but keyframe-aligned.
+// For frame-accurate cuts, use re-encode path (CutVideoWithFilters).
 func (e *Executor) regularCut(ctx context.Context, input, output string, start, end float64, onProgress ProgressCallback) error {
 	duration := end - start
 	args := []string{
@@ -308,7 +276,7 @@ func (e *Executor) reencodeSegment(ctx context.Context, input, output string, st
 		"-i", input,
 		"-t", fmt.Sprintf("%.6f", duration),
 		"-c:v", "libx264",
-		"-preset", "fast",
+		"-preset", "ultrafast",
 		"-crf", "17", // High quality
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
@@ -528,7 +496,7 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 		"-ss", fmt.Sprintf("%.3f", timestamp),
 		"-i", input,
 		"-vframes", "1",
-		"-q:v", fmt.Sprintf("%d", quality),
+		"-crf", fmt.Sprintf("%d", quality),
 		"-y",
 		output,
 	}
@@ -546,7 +514,7 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 			"-ss", fmt.Sprintf("%.3f", timestamp),
 			"-i", input,
 			"-vframes", "1",
-			"-q:v", fmt.Sprintf("%d", quality),
+			"-crf", fmt.Sprintf("%d", quality),
 			"-y",
 			output,
 		}
@@ -748,7 +716,6 @@ func (e *Executor) performSmartCut(ctx context.Context, opts SmartCutOptions, du
 		args = append(args,
 			"-c:v", opts.VideoCodec,
 			"-crf", fmt.Sprintf("%d", opts.Quality),
-			"-preset", opts.Preset,
 			"-pix_fmt", "yuv420p", // Ensure compatibility
 		)
 	}
@@ -845,8 +812,7 @@ func (e *Executor) CreateIntroVideo(ctx context.Context, imagePath string, durat
 		"-i", imagePath,
 		"-t", fmt.Sprintf("%d", duration),
 		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-crf", "18",
+		"-preset", "ultrafast", "-crf", "17",
 		"-pix_fmt", "yuv420p",
 		"-movflags", "+faststart",
 		"-y",
@@ -984,7 +950,7 @@ func (e *Executor) CutVideoWithFilters(ctx context.Context, input, output string
 	// Video encoding settings
 	args = append(args,
 		"-c:v", "libx264",
-		"-preset", "fast",
+		"-preset", "ultrafast",
 		"-crf", "17",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
@@ -1036,8 +1002,7 @@ func (e *Executor) CutVideoWithWatermark(ctx context.Context, input, output stri
 		"-map", "[out]",
 		"-map", "0:a?",
 		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", "17",
+		"-preset", "ultrafast", "-crf", "17",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "192k",
@@ -1058,7 +1023,7 @@ func (e *Executor) CutVideoWithWatermark(ctx context.Context, input, output stri
 		"-filter_complex", filterComplex + ",format=nv12,hwupload",
 		"-map", "[out]",
 		"-map", "0:a?",
-		"-c:v", "h264_vaapi",
+		"-c:v", "libx264",
 		"-qp", "18",
 		"-c:a", "aac",
 		"-b:a", "192k",
@@ -1171,8 +1136,7 @@ func (e *Executor) MergeVideosWithWatermark(ctx context.Context, inputs []string
 		"-map", "[out]",
 		"-map", "0:a?",
 		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", "17",
+		"-preset", "ultrafast", "-crf", "17",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "192k",
@@ -1216,8 +1180,7 @@ func (e *Executor) ApplyWatermark(ctx context.Context, input, output string, wat
 		"-map", "[out]",
 		"-map", "0:a?",
 		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", "17",
+		"-preset", "ultrafast", "-crf", "17",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "192k",

@@ -80,7 +80,7 @@ export default function App() {
         await fetch('/api/system/session/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionIdRef.current, auto_clean: true }),
+          body: JSON.stringify({ session_id: sessionIdRef.current, auto_clean: false }),
         });
       } catch (error) {
         console.error('[Session] Failed to start:', error);
@@ -102,7 +102,7 @@ export default function App() {
     const handleUnload = () => {
       navigator.sendBeacon('/api/system/session/end', JSON.stringify({
         session_id: sessionIdRef.current,
-        cleanup: true,
+        cleanup: false,
       }));
     };
 
@@ -143,9 +143,46 @@ export default function App() {
 
   const openVideoInEditor = (videoId: string) => {
     setSelectedVideoId(videoId);
+    localStorage.setItem('losslesscut_last_video', videoId);
     setShowFileManager(false);
     setShowEditor(true);
   };
+
+  // Restore last session on mount
+  useEffect(() => {
+    const restore = async () => {
+      // Try saved video ID first
+      const lastVideo = localStorage.getItem('losslesscut_last_video');
+      if (lastVideo) {
+        // Verify it still exists
+        try {
+          const res = await fetch(`/api/videos`);
+          if (res.ok) {
+            const videos = await res.json();
+            const found = videos.find((v: any) => v.id === lastVideo);
+            if (found) {
+              setSelectedVideoId(lastVideo);
+              setShowEditor(true);
+              return;
+            }
+          }
+        } catch {}
+      }
+      // Fallback: if there are any videos, open the first one
+      try {
+        const res = await fetch('/api/videos');
+        if (res.ok) {
+          const videos = await res.json();
+          if (videos.length > 0) {
+            setSelectedVideoId(videos[videos.length - 1].id);
+            localStorage.setItem('losslesscut_last_video', videos[videos.length - 1].id);
+            setShowEditor(true);
+          }
+        }
+      } catch {}
+    };
+    restore();
+  }, []);
 
   const handleClearAll = async () => {
     if (!confirm('¿ELIMINAR TODOS LOS DATOS?\n\n¡Esta acción no se puede deshacer!')) return;

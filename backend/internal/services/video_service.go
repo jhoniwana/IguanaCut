@@ -26,7 +26,7 @@ func NewVideoService(storage *storage.Manager, cfg *config.Config, logger *zap.L
 		storage: storage,
 		config:  cfg,
 		logger:  logger,
-		ffmpeg:  ffmpeg.NewExecutor(cfg.FFmpeg.Path, "ffprobe", logger),
+		ffmpeg:  ffmpeg.NewExecutor(cfg.FFmpeg.Path, "/home/jhon/lossless/backend/ffprobe-static", logger),
 	}
 }
 

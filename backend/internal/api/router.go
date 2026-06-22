@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -122,7 +124,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 
 		// Screenshot downloads
 		api.GET("/screenshots/:filename", func(c *gin.Context) {
-			filename := c.Param("filename")
+			filename := filepath.Base(c.Param("filename"))
 			filepath := services.Storage.GetScreenshotPath(filename)
 
 			if !services.Storage.FileExists(filepath) {
@@ -156,7 +158,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 
 		// Output file downloads (exported videos) - optimized with better headers
 		api.GET("/outputs/:filename", func(c *gin.Context) {
-			filename := c.Param("filename")
+			filename := filepath.Base(c.Param("filename"))
 			filepath := services.Storage.GetOutputPath(filename)
 
 			if !services.Storage.FileExists(filepath) {
@@ -175,14 +177,18 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 		})
 	}
 
-	// Serve frontend static files
-	router.Static("/assets", "./web/assets")
-	router.StaticFile("/", "./web/index.html")
-	router.StaticFile("/index.html", "./web/index.html")
+	// Serve frontend static files (absolute path)
+	webDir := filepath.Join(cfg.Storage.BasePath, "..", "backend", "web")
+	if _, err := os.Stat(webDir); os.IsNotExist(err) {
+		webDir = "./web"
+	}
+	router.Static("/assets", filepath.Join(webDir, "assets"))
+	router.StaticFile("/", filepath.Join(webDir, "index.html"))
+	router.StaticFile("/index.html", filepath.Join(webDir, "index.html"))
 
 	// Catch-all for SPA routing
 	router.NoRoute(func(c *gin.Context) {
-		c.File("./web/index.html")
+		c.File(filepath.Join(webDir, "index.html"))
 	})
 
 	return router

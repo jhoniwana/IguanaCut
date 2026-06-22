@@ -183,8 +183,20 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         try {
           setVideoUrl(apiClient.getVideoStreamUrl(initialVideoId));
           setVideoId(initialVideoId);
-          const proj = await apiClient.createProject('Video Descargado', initialVideoId);
+          // ponytail: try restoring saved project first
+          let proj;
+          const savedProjectId = localStorage.getItem('losslesscut_last_project');
+          if (savedProjectId) {
+            try { 
+              proj = await apiClient.getProject(savedProjectId);
+              if (proj.video_id !== initialVideoId) proj = null;
+            } catch { proj = null; }
+          }
+          if (!proj) {
+            proj = await apiClient.createProject('Video Descargado', initialVideoId);
+          }
           setProject(proj);
+          localStorage.setItem('losslesscut_last_project', proj.id);
           setSegments(proj.segments || []);
         } catch (e) { console.error(e); }
       };
@@ -273,7 +285,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 end: Math.max(start, end),
                 selected: true,
               };
-              const updated = [...segmentsRef.current.map(s => ({ ...s, selected: true })), seg];
+              const updated = [...segmentsRef.current.map(s => ({ ...s, selected: false })), seg];
               setSegments(updated);
               if (projectRef.current) {
                 apiClient.updateProject(projectRef.current.id, { ...projectRef.current, segments: updated }).catch(console.error);
@@ -625,7 +637,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       end: Math.max(start, end),
       selected: true,
     };
-    const updated = [...segments.map(s => ({ ...s, selected: true })), seg];
+    const updated = [...segments.map(s => ({ ...s, selected: false })), seg];
     setSegments(updated);
     setPendingCutStart(null);
     if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
@@ -740,7 +752,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       end: currentTime,
       selected: true,
     };
-    const updated = [...segments.map(s => ({ ...s, selected: true })), seg];
+    const updated = [...segments.map(s => ({ ...s, selected: false })), seg];
     setSegments(updated);
     if (project) apiClient.updateProject(project.id, { ...project, segments: updated }).catch(console.error);
   };

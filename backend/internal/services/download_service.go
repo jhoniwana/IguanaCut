@@ -489,8 +489,11 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 	// Parse progress from stdout
 	go s.parseDownloadProgress(stdout, download)
 
-	// Log stderr
+	// Log stderr (with cleanup)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			s.logger.Debug("yt-dlp stderr", zap.String("line", scanner.Text()))
@@ -502,6 +505,7 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 		if download.Status == models.DownloadStatusCancelled {
 			s.logger.Info("Download cancelled", zap.String("id", download.ID))
 			s.storage.UpdateDownload(download)
+			wg.Wait()
 			return
 		}
 
