@@ -1161,7 +1161,6 @@ export default function App() {
                             loading="lazy"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = 'none';
-                              (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 24 24" height="24" width="24" color="#fff" xmlns="http://www.w3.org/2000/svg" style="margin:16px 0 0 16px"><path d="M17 9H7V7h10v2zm0 4H7v-2h10v2zm-4 4H7v-2h6v2zM5 3h14v2H5V3zm16 2v2h2V5h-2zm0 14v2h2v-2h-2zM5 19h14v2H5v-2zM3 5h2v2H3V5zm0 14h2v2H3v-2z"></path></svg>';
                             }}
                             style={{
                               width: '100%',
