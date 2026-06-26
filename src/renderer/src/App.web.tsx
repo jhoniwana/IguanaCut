@@ -12,11 +12,12 @@ import {
   IoMdRefresh,
   IoMdClose,
   IoMdTime,
-  IoMdCheckmarkCircle
+  IoMdCheckmarkCircle,
+  IoMdCreate,
+  IoMdCloudDownload
 } from 'react-icons/io';
 import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload } from 'react-icons/fi';
 import { MdBlurOn } from 'react-icons/md';
-import { IoMdCloudDownload } from 'react-icons/io';
 import VideoEditor from './components/VideoEditor';
 import MultiSourceEditor from './components/MultiSourceEditor';
 
