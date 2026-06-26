@@ -46,6 +46,8 @@ func (h *ProjectHandler) Create(c *gin.Context) {
 }
 
 func (h *ProjectHandler) List(c *gin.Context) {
+	sessionID := c.GetHeader("X-Session-ID")
+
 	projects, err := h.services.Project.List()
 	if err != nil {
 		h.logger.Error("Failed to list projects", zap.Error(err))
@@ -53,16 +55,36 @@ func (h *ProjectHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, projects)
+	// Filter by session ID (keep legacy projects with no session set)
+	filtered := make([]*models.Project, 0, len(projects))
+	for _, p := range projects {
+		if p.SessionID == "" || p.SessionID == sessionID {
+			filtered = append(filtered, p)
+		}
+	}
+
+	c.JSON(http.StatusOK, filtered)
 }
 
 func (h *ProjectHandler) Get(c *gin.Context) {
 	id := c.Param("id")
+	sessionID := c.GetHeader("X-Session-ID")
 
 	project, err := h.services.Project.Get(id)
 	if err != nil {
 		h.logger.Error("Failed to get project", zap.String("id", id), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
+		return
+	}
+
+	// Check session ownership (legacy projects with no session set remain accessible)
+	if project.SessionID != "" && project.SessionID != sessionID {
+		h.logger.Warn("Unauthorized project access attempt",
+			zap.String("projectID", id),
+			zap.String("projectSession", project.SessionID),
+			zap.String("requestSession", sessionID),
+		)
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this project"})
 		return
 	}
 

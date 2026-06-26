@@ -13,6 +13,7 @@ storage:
 
 ffmpeg:
   path: /home/jhon/lossless/backend/ffmpeg-static
+  ffprobe_path: /home/jhon/lossless/backend/ffprobe-static
   threads: 0  # 0 = auto
 
 ytdlp:

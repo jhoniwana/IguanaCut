@@ -407,12 +407,20 @@ func (e *Executor) MergeVideosConcatDemuxer(ctx context.Context, inputs []string
 	}
 
 	if len(inputs) == 1 {
-		// Just copy the single file
-		input, err := os.ReadFile(inputs[0])
+		src, err := os.Open(inputs[0])
 		if err != nil {
-			return fmt.Errorf("failed to read input file: %w", err)
+			return fmt.Errorf("failed to open input file: %w", err)
 		}
-		return os.WriteFile(output, input, 0644)
+		defer src.Close()
+		dst, err := os.Create(output)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer dst.Close()
+		if _, err := io.Copy(dst, src); err != nil {
+			return fmt.Errorf("failed to copy file: %w", err)
+		}
+		return nil
 	}
 
 	e.logger.Info("Fast merging with concat demuxer",
@@ -486,13 +494,10 @@ func (e *Executor) ConvertFormat(ctx context.Context, input, output, format stri
 	})
 }
 
-// CaptureSnapshot captures a frame as an image
+// CaptureSnapshot captures a frame as an image using CPU-only path.
 func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, timestamp float64, quality int) error {
-	// Try VAAPI hardware acceleration for faster decoding, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
-		"-hwaccel", "vaapi",
-		"-hwaccel_device", "/dev/dri/renderD128",
 		"-ss", fmt.Sprintf("%.3f", timestamp),
 		"-i", input,
 		"-vframes", "1",
@@ -501,30 +506,7 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 		output,
 	}
 
-	err := e.Execute(ctx, ExecuteOptions{
-		Args: args,
-	})
-
-	// If VAAPI fails, fallback to CPU
-	if err != nil && strings.Contains(err.Error(), "vaapi") {
-		e.logger.Debug("VAAPI snapshot failed, falling back to CPU")
-
-		argsCPU := []string{
-			"-hide_banner",
-			"-ss", fmt.Sprintf("%.3f", timestamp),
-			"-i", input,
-			"-vframes", "1",
-			"-crf", fmt.Sprintf("%d", quality),
-			"-y",
-			output,
-		}
-
-		return e.Execute(ctx, ExecuteOptions{
-			Args: argsCPU,
-		})
-	}
-
-	return err
+	return e.Execute(ctx, ExecuteOptions{Args: args})
 }
 
 // ExtractAudio extracts audio track from video
@@ -545,14 +527,10 @@ func (e *Executor) ExtractAudio(ctx context.Context, input, output string, durat
 	})
 }
 
-// GenerateWaveform generates an audio waveform image using FFmpeg showwavespic filter
-// Uses hardware acceleration for faster audio decoding
+// GenerateWaveform generates an audio waveform image using FFmpeg showwavespic filter.
 func (e *Executor) GenerateWaveform(ctx context.Context, input, output string) error {
-	// Try VAAPI hardware acceleration for decoding, fallback to CPU if not available
 	args := []string{
 		"-hide_banner",
-		"-hwaccel", "vaapi",
-		"-hwaccel_device", "/dev/dri/renderD128",
 		"-i", input,
 		"-filter_complex", "showwavespic=s=1920x120:colors=#667eea|#667eea:scale=sqrt:split_channels=0",
 		"-frames:v", "1",
@@ -560,29 +538,7 @@ func (e *Executor) GenerateWaveform(ctx context.Context, input, output string) e
 		output,
 	}
 
-	err := e.Execute(ctx, ExecuteOptions{
-		Args: args,
-	})
-
-	// If VAAPI fails, fallback to CPU
-	if err != nil && strings.Contains(err.Error(), "vaapi") {
-		e.logger.Debug("VAAPI waveform generation failed, falling back to CPU")
-
-		argsCPU := []string{
-			"-hide_banner",
-			"-i", input,
-			"-filter_complex", "showwavespic=s=1920x120:colors=#667eea|#667eea:scale=sqrt:split_channels=0",
-			"-frames:v", "1",
-			"-y",
-			output,
-		}
-
-		return e.Execute(ctx, ExecuteOptions{
-			Args: argsCPU,
-		})
-	}
-
-	return err
+	return e.Execute(ctx, ExecuteOptions{Args: args})
 }
 
 // SmartCutOptions contains options for smart cutting
@@ -614,7 +570,7 @@ func (e *Executor) SmartCut(ctx context.Context, opts SmartCutOptions) error {
 
 	if canLossless {
 		e.logger.Info("Performing lossless cut (keyframe-aligned)")
-		return e.CutVideo(ctx, opts.Input, opts.Output, opts.Start, opts.End, opts.OnProgress)
+		return e.CutVideoLossless(ctx, opts.Input, opts.Output, opts.Start, opts.End, opts.OnProgress)
 	}
 
 	// Smart cut with minimal re-encoding

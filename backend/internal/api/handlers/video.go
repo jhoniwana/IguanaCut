@@ -94,12 +94,24 @@ func (h *VideoHandler) Download(c *gin.Context) {
 
 func (h *VideoHandler) Stream(c *gin.Context) {
 	videoID := c.Param("id")
+	sessionID := c.GetHeader("X-Session-ID")
 
 	// Get video metadata
 	video, err := h.services.Video.GetVideo(videoID)
 	if err != nil {
 		h.logger.Error("Video not found", zap.String("id", videoID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+
+	// Check session ownership (legacy videos with no session set remain accessible)
+	if video.SessionID != "" && video.SessionID != sessionID {
+		h.logger.Warn("Unauthorized stream attempt",
+			zap.String("videoID", videoID),
+			zap.String("videoSession", video.SessionID),
+			zap.String("requestSession", sessionID),
+		)
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this video"})
 		return
 	}
 
@@ -340,6 +352,48 @@ func (h *VideoHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "video deleted"})
 }
 
+type RenameRequest struct {
+	FileName string `json:"file_name" binding:"required"`
+}
+
+func (h *VideoHandler) Rename(c *gin.Context) {
+	videoID := c.Param("id")
+	sessionID := c.GetHeader("X-Session-ID")
+
+	video, err := h.services.Video.GetVideo(videoID)
+	if err != nil {
+		h.logger.Error("Video not found", zap.String("id", videoID), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+
+	if video.SessionID != "" && video.SessionID != sessionID {
+		h.logger.Warn("Unauthorized rename attempt", zap.String("videoID", videoID))
+		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+		return
+	}
+
+	var req RenameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if req.FileName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file_name is required"})
+		return
+	}
+
+	updated, err := h.services.Video.RenameVideo(videoID, req.FileName)
+	if err != nil {
+		h.logger.Error("Failed to rename video", zap.String("id", videoID), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rename video"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}
+
 // ScreenshotRequest represents the request body for screenshot capture
 type ScreenshotRequest struct {
 	Timestamp float64 `json:"timestamp" binding:"required"`
@@ -389,6 +443,8 @@ func (h *VideoHandler) ServeScreenshot(c *gin.Context) {
 }
 
 func (h *VideoHandler) List(c *gin.Context) {
+	sessionID := c.GetHeader("X-Session-ID")
+
 	videos, err := h.services.Video.ListVideos()
 	if err != nil {
 		h.logger.Error("Failed to list videos", zap.Error(err))
@@ -396,7 +452,15 @@ func (h *VideoHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, videos)
+	// Filter by session ID (keep legacy videos with no session set)
+	filtered := make([]*models.Video, 0, len(videos))
+	for _, v := range videos {
+		if v.SessionID == "" || v.SessionID == sessionID {
+			filtered = append(filtered, v)
+		}
+	}
+
+	c.JSON(http.StatusOK, filtered)
 }
 
 // DetectFacesRequest represents the request for face detection

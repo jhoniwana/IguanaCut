@@ -4,19 +4,19 @@ import { IoMdClose, IoMdCheckmarkCircle, IoMdRefresh } from 'react-icons/io';
 import { FiDownload, FiSearch, FiCheck, FiX, FiUpload } from 'react-icons/fi';
 import { BsEmojiSmile, BsSquareFill, BsCircleFill, BsStars } from 'react-icons/bs';
 
-// Gemstone Inc inspired colors
+// Purple theme colors
 const colors = {
   bg: '#0a0a0f',
   surface: '#12121a',
   card: '#1a1a24',
   border: '#2a2a3a',
-  primary: '#00E5FF',
-  secondary: '#FF148A',
-  accent: '#FFC800',
+  primary: '#8B5CF6',
+  secondary: '#A78BFA',
+  accent: '#C084FC',
   text: '#ffffff',
   textSecondary: '#b0b0c0',
   textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
+  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
 };
 
 // Blur style types

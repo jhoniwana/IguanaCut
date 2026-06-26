@@ -177,7 +177,7 @@ type ExportRequest struct {
 	OutroDuration  int    `json:"outro_duration,omitempty"` // Duration in seconds
 	// Crop settings
 	CropEnabled bool   `json:"crop_enabled,omitempty"`
-	CropPreset  string `json:"crop_preset,omitempty"` // "tiktok", "instagram", "youtube", "cinema", "free"
+	CropPreset  string `json:"crop_preset,omitempty"` // "tiktok", "instagram", "youtube", "cinema", "portrait43", "free"
 	CropX       int    `json:"crop_x,omitempty"`
 	CropY       int    `json:"crop_y,omitempty"`
 	CropWidth   int    `json:"crop_width,omitempty"`

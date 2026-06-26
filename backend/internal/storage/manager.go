@@ -126,7 +126,9 @@ func (m *Manager) GetNextVideoNumber() int {
 
 	// Increment and save new counter
 	nextNum := currentNum + 1
-	os.WriteFile(counterFile, []byte(strconv.Itoa(nextNum)), 0644)
+	if err := os.WriteFile(counterFile, []byte(strconv.Itoa(nextNum)), 0644); err != nil {
+		m.logger.Error("Failed to write video counter", zap.String("path", counterFile), zap.Error(err))
+	}
 
 	m.logger.Info("Generated video number", zap.Int("number", currentNum))
 	return currentNum

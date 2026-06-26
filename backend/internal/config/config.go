@@ -30,8 +30,9 @@ type StorageConfig struct {
 }
 
 type FFmpegConfig struct {
-	Path    string `mapstructure:"path"`
-	Threads int    `mapstructure:"threads"`
+	Path        string `mapstructure:"path"`
+	FFprobePath string `mapstructure:"ffprobe_path"`
+	Threads     int    `mapstructure:"threads"`
 }
 
 type YtDlpConfig struct {
@@ -98,6 +99,7 @@ func setDefaults(v *viper.Viper) {
 
 	// FFmpeg defaults
 	v.SetDefault("ffmpeg.path", "ffmpeg")
+	v.SetDefault("ffmpeg.ffprobe_path", "ffprobe")
 	v.SetDefault("ffmpeg.threads", 0) // auto
 
 	// yt-dlp defaults

@@ -32,7 +32,7 @@ func NewOperationService(storage *storage.Manager, cfg *config.Config, logger *z
 		storage:    storage,
 		config:     cfg,
 		logger:     logger,
-		ffmpeg:     ffmpeg.NewExecutor(cfg.FFmpeg.Path, "/home/jhon/lossless/backend/ffprobe-static", logger),
+		ffmpeg:     ffmpeg.NewExecutor(cfg.FFmpeg.Path, cfg.FFmpeg.FFprobePath, logger),
 		operations: make(map[string]*models.Operation),
 	}
 }
@@ -1176,7 +1176,7 @@ func (s *OperationService) cutVideoWithOptionalFilters(ctx context.Context, inpu
 			}
 		})
 	} else {
-		err = s.ffmpeg.CutVideoLossless(ctx, inputPath, tempOutput, start, end, func(p float64) {
+		err = s.ffmpeg.CutVideo(ctx, inputPath, tempOutput, start, end, func(p float64) {
 			if onProgress != nil {
 				if s.needsAutoBlur(request) {
 					onProgress(p * 0.5) // First 50% for cutting

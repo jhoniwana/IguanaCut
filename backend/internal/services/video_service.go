@@ -26,7 +26,7 @@ func NewVideoService(storage *storage.Manager, cfg *config.Config, logger *zap.L
 		storage: storage,
 		config:  cfg,
 		logger:  logger,
-		ffmpeg:  ffmpeg.NewExecutor(cfg.FFmpeg.Path, "/home/jhon/lossless/backend/ffprobe-static", logger),
+		ffmpeg:  ffmpeg.NewExecutor(cfg.FFmpeg.Path, cfg.FFmpeg.FFprobePath, logger),
 	}
 }
 
@@ -116,6 +116,22 @@ func (s *VideoService) DeleteVideo(id string) error {
 
 	// Delete metadata
 	return s.storage.DeleteVideo(id)
+}
+
+func (s *VideoService) RenameVideo(id string, newName string) (*models.Video, error) {
+	if newName == "" {
+		return nil, fmt.Errorf("name cannot be empty")
+	}
+	video, err := s.storage.GetVideo(id)
+	if err != nil {
+		return nil, err
+	}
+	video.FileName = newName
+	if err := s.storage.SaveVideo(video); err != nil {
+		return nil, fmt.Errorf("failed to save renamed video: %w", err)
+	}
+	s.logger.Info("Renamed video", zap.String("id", id), zap.String("newName", newName))
+	return video, nil
 }
 
 func (s *VideoService) StreamVideo(id string) (string, error) {

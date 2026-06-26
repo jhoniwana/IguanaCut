@@ -13,14 +13,14 @@ const colors = {
   surface: '#12121a',
   card: '#1a1a24',
   border: '#2a2a3a',
-  primary: '#00E5FF',
-  secondary: '#FF148A',
-  accent: '#FFC800',
+  primary: '#8B5CF6',
+  secondary: '#A78BFA',
+  accent: '#C084FC',
   danger: '#ff4466',
   text: '#ffffff',
   textSecondary: '#b0b0c0',
   textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
+  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
 };
 
 interface Props {

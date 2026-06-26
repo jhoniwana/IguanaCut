@@ -79,11 +79,13 @@ func (s *DownloadService) StartDownload(ctx context.Context, req DownloadRequest
 func (s *DownloadService) GetDownload(id string) (*models.Download, error) {
 	s.mu.Lock()
 	download, exists := s.downloads[id]
-	s.mu.Unlock()
-
 	if exists {
-		return download, nil
+		// Copy fields under lock to avoid data race with the running download goroutine
+		snapshot := *download
+		s.mu.Unlock()
+		return &snapshot, nil
 	}
+	s.mu.Unlock()
 
 	// Try loading from storage
 	return s.storage.GetDownload(id)
@@ -457,7 +459,7 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 	args = append(args, req.URL)
 
 	// Execute yt-dlp
-	cmd := exec.Command("yt-dlp", args...)
+	cmd := exec.Command(s.config.YtDlp.Path, args...)
 
 	// Create pipes for output
 	stdout, err := cmd.StdoutPipe()
@@ -618,7 +620,7 @@ type VideoInfo struct {
 
 // getVideoInfo retrieves video information without downloading
 func (s *DownloadService) getVideoInfo(url string) (*VideoInfo, error) {
-	cmd := exec.Command("yt-dlp", "--dump-json", "--no-playlist", url)
+	cmd := exec.Command(s.config.YtDlp.Path, "--dump-json", "--no-playlist", url)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video info: %w", err)

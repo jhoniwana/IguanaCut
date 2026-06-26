@@ -8,26 +8,23 @@ import CropSelector, { CropConfig } from './CropSelector';
 import BlurRegionSelector, { BlurConfig, ClipBlurZone } from './BlurRegionSelector';
 import WatermarkSettings, { WatermarkConfig, getDefaultWatermarkConfig } from './WatermarkSettings';
 
-// Import Gemstone Inc logo
-import gemstonelogo from '../assets/logo.png';
-
-// Gemstone Inc inspired colors - Modern luxury aesthetic
+// Purple theme
 const colors = {
   bg: '#0a0a0f',
   surface: '#12121a',
   card: '#1a1a24',
   border: '#2a2a3a',
-  primary: '#00E5FF',    // Cyan/Electric blue
-  secondary: '#FF148A',  // Hot pink/Magenta
-  accent: '#FFC800',     // Golden yellow
-  danger: '#ff4466',     // Red
+  primary: '#8B5CF6',
+  secondary: '#A78BFA',
+  accent: '#C084FC',
+  danger: '#ff4466',
   text: '#ffffff',
   textSecondary: '#b0b0c0',
   textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
-  gradientAccent: 'linear-gradient(135deg, #FF148A 0%, #FFC800 100%)',
-  shadow: '0 4px 20px rgba(0, 229, 255, 0.15)',
-  shadowDeep: '0 8px 40px rgba(255, 20, 138, 0.2)',
+  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
+  gradientAccent: 'linear-gradient(135deg, #A78BFA 0%, #C084FC 100%)',
+  shadow: '0 4px 20px rgba(139, 92, 246, 0.15)',
+  shadowDeep: '0 8px 40px rgba(167, 139, 250, 0.2)',
 };
 
 interface Props {
@@ -130,7 +127,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     const id = `toast-${Date.now()}`;
     setToasts(prev => [...prev, { id, message, type, action }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      if (mountedRef.current) setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
   }, []);
 
@@ -152,6 +149,8 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   const [renderedVideo, setRenderedVideo] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   // Refs
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const isPlayingRef = useRef(false);
   const isSeekingRef = useRef(false);
   const pendingCutStartRef = useRef<number | null>(null);
@@ -271,7 +270,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
             }
             // Toast for edit completion
             setToasts(prev => [...prev, { id: `t-${Date.now()}`, message: `"${clipName}" actualizado`, type: 'success' }]);
-            setTimeout(() => setToasts(prev => prev.slice(1)), 3000);
+            setTimeout(() => { if (mountedRef.current) setToasts(prev => prev.slice(1)); }, 3000);
           } else {
             // Create clip using video's current time and ref for pending start
             const end = time;
@@ -292,7 +291,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
               }
               // Toast for clip creation
               setToasts(prev => [...prev, { id: `t-${Date.now()}`, message: `"${clipName}" creado`, type: 'success' }]);
-              setTimeout(() => setToasts(prev => prev.slice(1)), 3000);
+              setTimeout(() => { if (mountedRef.current) setToasts(prev => prev.slice(1)); }, 3000);
             }
             setPendingCutStart(null);
           }
@@ -727,7 +726,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     setDraggedClipId(null);
     setDragOverClipId(null);
     setJustDropped(true);
-    setTimeout(() => setJustDropped(false), 100);
+    setTimeout(() => { if (mountedRef.current) setJustDropped(false); }, 100);
   };
 
   const handleDragEnd = (e: React.DragEvent) => {
@@ -1084,11 +1083,11 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     setCurrentTime(time);
   };
 
-  // Gemstone Inc color palette for segments
-  const segColors = ['#00E5FF', '#FF148A', '#FFC800', '#00FF88', '#AA66FF', '#FF6644'];
+  // Segment colors
+  const segColors = ['#8B5CF6', '#A78BFA', '#C084FC', '#7C3AED', '#6D28D9', '#5B21B6'];
   const selectedCount = segments.filter(s => s.selected).length;
 
-  // Styles - Gemstone Inc aesthetic (rounded, modern, with shadows)
+  // Styles
   const btn = (bg: string, color: string = '#fff'): React.CSSProperties => ({
     background: bg,
     color,
@@ -1153,7 +1152,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
-      {/* Header - Gemstone Inc Style */}
+      {/* Header */}
       <header style={{
         background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
         padding: isMobile ? '12px 16px' : '16px 24px',
@@ -1164,16 +1163,21 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {/* Gemstone Inc Logo */}
-          <img
-            src={gemstonelogo}
-            alt="Gemstone Inc"
-            style={{
-              height: isMobile ? '36px' : '44px',
-              width: 'auto',
-              filter: 'drop-shadow(0 2px 8px rgba(0, 229, 255, 0.3))',
-            }}
-          />
+          <div style={{
+            width: isMobile ? '36px' : '44px',
+            height: isMobile ? '36px' : '44px',
+            borderRadius: '10px',
+            background: colors.gradient,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: isMobile ? '16px' : '20px',
+            fontWeight: '700',
+            color: '#fff',
+            flexShrink: 0,
+          }}>
+            LC
+          </div>
           <div>
             <h1 style={{
               margin: 0,
@@ -1213,7 +1217,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         </div>
       </header>
 
-      {/* Help Modal - Gemstone Style */}
+      {/* Help Modal */}
       {showHelp && (
         <div style={{
           position: 'absolute', inset: 0,
@@ -1286,29 +1290,34 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
       {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!videoUrl ? (
-          // Upload - Gemstone Inc Style
+          // Upload area
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             padding: '32px', gap: '28px',
             background: `radial-gradient(circle at 50% 30%, ${colors.surface} 0%, ${colors.bg} 70%)`,
           }}>
-            {/* Gemstone Inc Logo */}
+            {/* Logo */}
             <div style={{
               padding: '20px',
               borderRadius: '24px',
               background: `linear-gradient(145deg, rgba(26, 26, 36, 0.8) 0%, rgba(18, 18, 26, 0.9) 100%)`,
-              boxShadow: '0 8px 40px rgba(0, 229, 255, 0.2), 0 0 60px rgba(255, 20, 138, 0.15)',
+              boxShadow: `0 8px 40px rgba(139, 92, 246, 0.2), 0 0 60px rgba(167, 139, 250, 0.15)`,
               border: `1px solid ${colors.border}`,
             }}>
-              <img
-                src={gemstonelogo}
-                alt="Gemstone Inc"
-                style={{
-                  height: '80px',
-                  width: 'auto',
-                  filter: 'drop-shadow(0 4px 12px rgba(0, 229, 255, 0.4))',
-                }}
-              />
+              <div style={{
+                width: '80px',
+                height: '80px',
+                borderRadius: '18px',
+                background: colors.gradient,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px',
+                fontWeight: '700',
+                color: '#fff',
+              }}>
+                LC
+              </div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <h2 style={{
@@ -1825,7 +1834,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 )}
               </div>
 
-              {/* Clips Sidebar - Gemstone Style - Wider for better UX */}
+               {/* Clips Sidebar */}
               <div style={{
                 position: 'absolute', top: 0, right: 0, bottom: 0,
                 width: sidebarOpen ? (isMobile ? '300px' : '360px') : '50px',
@@ -2105,7 +2114,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   </div>
                 )}
 
-                {/* Export Section - Compact Gemstone Style */}
+                {/* Export Section */}
                 {sidebarOpen && segments.length > 0 && (
                   <div style={{
                     borderTop: `1px solid ${colors.border}`,
@@ -2388,7 +2397,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                           </button>
                         )}
 
-                        {/* Export Button - Gemstone Gradient */}
+                         {/* Export Button */}
                         <button
                           onClick={handleExport}
                           disabled={selectedCount === 0}
@@ -2554,7 +2563,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                 {/* Divider */}
                 <div style={{ width: '1px', height: '32px', background: colors.border, margin: '0 8px' }} />
 
-                {/* I - Set In Point - Gemstone Style */}
+                {/* I - Set In Point */}
                 <button
                   onClick={handleMarkStart}
                   style={{
@@ -2603,7 +2612,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   </div>
                 </button>
 
-                {/* O - Set Out Point - Gemstone Style */}
+                {/* O - Set Out Point */}
                 <button
                   onClick={handleMarkEnd}
                   disabled={pendingCutStart === null && !editingClipId}

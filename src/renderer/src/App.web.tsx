@@ -20,33 +20,29 @@ import { IoMdCloudDownload } from 'react-icons/io';
 import VideoEditor from './components/VideoEditor';
 import MultiSourceEditor from './components/MultiSourceEditor';
 
-// Import Gemstone Inc logo
-import gemstonelogo from './assets/logo.png';
-
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
-// Gemstone Inc inspired colors
+// Purple theme
 const colors = {
   bg: '#0a0a0f',
   surface: '#12121a',
   card: '#1a1a24',
   border: '#2a2a3a',
-  primary: '#00E5FF',
-  secondary: '#FF148A',
-  accent: '#FFC800',
+  primary: '#8B5CF6',
+  secondary: '#A78BFA',
+  accent: '#C084FC',
   danger: '#ff4466',
   success: '#00FF88',
   text: '#ffffff',
   textSecondary: '#b0b0c0',
   textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #00E5FF 0%, #FF148A 100%)',
-  gradientAccent: 'linear-gradient(135deg, #FF148A 0%, #FFC800 100%)',
+  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
+  gradientAccent: 'linear-gradient(135deg, #A78BFA 0%, #C084FC 100%)',
 };
 
 interface VideoFile {
   id: string;
-  filename: string;
-  original_filename: string;
+  file_name: string;
   size: number;
   duration: number;
   format: string;
@@ -73,6 +69,8 @@ export default function App() {
   const [downloadStatus, setDownloadStatus] = useState('');
   const [downloadId, setDownloadId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [renamingVideoId, setRenamingVideoId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
     const initSession = async () => {
@@ -139,6 +137,32 @@ export default function App() {
     } catch (error) {
       console.error('Failed to delete video:', error);
     }
+  };
+
+  const startRename = (id: string, currentName: string) => {
+    setRenamingVideoId(id);
+    setRenameValue(currentName);
+  };
+
+  const submitRename = async (id: string) => {
+    if (!renameValue.trim()) {
+      setRenamingVideoId(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/videos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_name: renameValue.trim() }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setVideos(videos.map(v => v.id === id ? { ...v, file_name: updated.file_name } : v));
+      }
+    } catch (error) {
+      console.error('Failed to rename video:', error);
+    }
+    setRenamingVideoId(null);
   };
 
   const openVideoInEditor = (videoId: string) => {
@@ -289,6 +313,7 @@ export default function App() {
           if (videoId) {
             setShowFileManager(false);
             setSelectedVideoId(videoId);
+            localStorage.setItem('losslesscut_last_video', videoId);
             setShowEditor(true);
           } else {
             // Fallback: reload videos and switch to files tab
@@ -356,7 +381,7 @@ export default function App() {
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Header - Gemstone Style */}
+      {/* Header */}
       <header style={{
         background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
         padding: '20px 24px',
@@ -365,15 +390,20 @@ export default function App() {
       }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <img
-              src={gemstonelogo}
-              alt="Gemstone Inc"
-              style={{
-                height: '48px',
-                width: 'auto',
-                filter: 'drop-shadow(0 2px 8px rgba(0, 229, 255, 0.3))',
-              }}
-            />
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: colors.gradient,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '22px',
+              fontWeight: '700',
+              color: '#fff',
+            }}>
+              LC
+            </div>
             <div>
               <h1 style={{
                 margin: 0,
@@ -423,7 +453,7 @@ export default function App() {
         margin: '0 auto',
         width: '100%',
       }}>
-        {/* Logo & Welcome */}
+        {/* Welcome */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <div style={{
             marginBottom: '24px',
@@ -432,17 +462,22 @@ export default function App() {
             borderRadius: '20px',
             display: 'inline-block',
             border: `1px solid ${colors.border}`,
-            boxShadow: '0 8px 40px rgba(0, 229, 255, 0.15)',
+            boxShadow: `0 8px 40px rgba(139, 92, 246, 0.15)`,
           }}>
-            <img
-              src={gemstonelogo}
-              alt="Gemstone Inc"
-              style={{
-                height: '70px',
-                width: 'auto',
-                filter: 'drop-shadow(0 4px 12px rgba(0, 229, 255, 0.4))',
-              }}
-            />
+            <div style={{
+              width: '70px',
+              height: '70px',
+              borderRadius: '16px',
+              background: colors.gradient,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '32px',
+              fontWeight: '700',
+              color: '#fff',
+            }}>
+              LC
+            </div>
           </div>
           <h2 style={{
             color: colors.text,
@@ -701,8 +736,7 @@ export default function App() {
           fontSize: '12px',
           margin: 0,
         }}>
-          Powered by <span style={{ color: colors.primary }}>FFmpeg</span> •
-          <span style={{ color: colors.secondary }}> Gemstone Inc</span>
+          Powered by <span style={{ color: colors.primary }}>FFmpeg</span>
         </p>
       </footer>
 
@@ -1112,33 +1146,71 @@ export default function App() {
                         }}
                         onClick={() => openVideoInEditor(video.id)}
                       >
-                        {/* Video Thumbnail/Icon */}
+                        {/* Video Thumbnail/Preview */}
                         <div style={{
                           width: '56px',
                           height: '56px',
-                          background: colors.gradient,
                           borderRadius: '12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                          overflow: 'hidden',
                           flexShrink: 0,
+                          background: colors.card,
                         }}>
-                          <FiVideo size={24} color="#fff" />
+                          <img
+                            src={`/api/videos/${video.id}/thumbnail`}
+                            alt=""
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 24 24" height="24" width="24" color="#fff" xmlns="http://www.w3.org/2000/svg" style="margin:16px 0 0 16px"><path d="M17 9H7V7h10v2zm0 4H7v-2h10v2zm-4 4H7v-2h6v2zM5 3h14v2H5V3zm16 2v2h2V5h-2zm0 14v2h2v-2h-2zM5 19h14v2H5v-2zM3 5h2v2H3V5zm0 14h2v2H3v-2z"></path></svg>';
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
                         </div>
 
                         {/* Video Info */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <h4 style={{
-                            margin: '0 0 4px',
-                            color: colors.text,
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {video.original_filename || video.filename}
-                          </h4>
+                          {renamingVideoId === video.id ? (
+                            <input
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={() => submitRename(video.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') submitRename(video.id);
+                                if (e.key === 'Escape') setRenamingVideoId(null);
+                              }}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                background: colors.bg,
+                                border: `1px solid ${colors.primary}`,
+                                color: colors.text,
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                outline: 'none',
+                                marginBottom: '4px',
+                              }}
+                            />
+                          ) : (
+                            <h4 style={{
+                              margin: '0 0 4px',
+                              color: colors.text,
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {video.file_name}
+                            </h4>
+                          )}
                           <div style={{
                             display: 'flex',
                             gap: '12px',
@@ -1163,7 +1235,26 @@ export default function App() {
                         </div>
 
                         {/* Actions */}
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRename(video.id, video.file_name);
+                            }}
+                            title="Renombrar"
+                            style={{
+                              background: 'transparent',
+                              border: `1px solid ${colors.border}`,
+                              color: colors.textSecondary,
+                              padding: '8px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <IoMdCreate size={14} />
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

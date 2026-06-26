@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/mifi/lossless-cut/backend/internal/api"
 	"github.com/mifi/lossless-cut/backend/internal/config"
@@ -16,7 +18,11 @@ func main() {
 	configPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-	logger, _ := zap.NewProduction()
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
 	defer logger.Sync()
 
 	cfg, err := config.Load(*configPath)
@@ -41,8 +47,8 @@ func main() {
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      router,
-		ReadTimeout:  0,
-		WriteTimeout: 0,
+		ReadTimeout:  5 * time.Minute,
+		WriteTimeout: 10 * time.Minute,
 	}
 
 	if err := server.ListenAndServe(); err != nil {

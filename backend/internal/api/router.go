@@ -88,6 +88,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			videos.GET("/:id/thumbnail", videoHandler.Thumbnail)
 			videos.POST("/:id/screenshot", videoHandler.Screenshot)
 			videos.POST("/:id/detect-faces", videoHandler.DetectFaces)
+			videos.PUT("/:id", videoHandler.Rename)
 			videos.DELETE("/:id", videoHandler.Delete)
 		}
 
