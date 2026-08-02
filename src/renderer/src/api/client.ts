@@ -1,5 +1,5 @@
 // API client for web version - replaces Electron IPC
-const API_BASE = process.env.IS_WEB ? '' : 'http://localhost:8080';
+const API_BASE = process.env.IS_WEB ? '' : 'http://localhost:8090';
 
 // Session ID for isolating users without login
 function getSessionId(): string {

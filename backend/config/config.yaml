@@ -1,19 +1,19 @@
 server:
   host: 0.0.0.0
-  port: 8082
+  port: 8090
   max_upload_size: 10737418240  # 10GB
   production: false
   cors_origins:
     - "*"
 
 storage:
-  base_path: /home/jhon/lossless/storage
+  base_path: /home/jhon/losslesscut/storage
   auto_cleanup: false
   cleanup_after_days: 7
 
 ffmpeg:
-  path: /home/jhon/lossless/backend/ffmpeg-static
-  ffprobe_path: /home/jhon/lossless/backend/ffprobe-static
+  path: ffmpeg
+  ffprobe_path: ffprobe
   threads: 0  # 0 = auto
 
 ytdlp:
