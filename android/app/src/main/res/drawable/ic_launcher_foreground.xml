@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple film/scissors glyph for the launcher -->
+    <path
+        android:fillColor="#e3b341"
+        android:pathData="M38,44 L54,60 L70,44 L60,34 L54,40 L48,34 Z" />
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M40,68 C36,68 33,71 33,75 C33,79 36,82 40,82 C44,82 47,79 47,75 C47,71 44,68 40,68 Z M54,60 L46,52 M40,68 C44,67 47,64 47,60 C47,56 44,53 40,53 C36,53 33,56 33,60 C33,64 36,67 40,68 Z" />
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M68,68 C64,68 61,71 61,75 C61,79 64,82 68,82 C72,82 75,79 75,75 C75,71 72,68 68,68 Z M54,60 L62,52 M68,68 C72,67 75,64 75,60 C75,56 72,53 68,53 C64,53 61,56 61,60 C61,64 64,67 68,68 Z" />
+</vector>

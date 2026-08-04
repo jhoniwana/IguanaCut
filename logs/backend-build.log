@@ -1,6 +1,0 @@
-Building...
-# github.com/mifi/lossless-cut/backend/internal/ffmpeg
-internal/ffmpeg/scene_detection.go:43:155: newline in string
-internal/ffmpeg/scene_detection.go:43:155: syntax error: unexpected newline in argument list; possibly missing comma or )
-internal/ffmpeg/scene_detection.go:44:4: syntax error: unexpected newline in argument list; possibly missing comma or )
-make: *** [Makefile:10: build] Error 1

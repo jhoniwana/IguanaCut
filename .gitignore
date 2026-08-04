@@ -47,3 +47,30 @@ storage/
 ffmpeg-static
 ffprobe-static
 *.old
+
+# Runtime artifacts
+server.pid
+logs/
+*.log
+/backend/server
+/backend/lossless-cut-server
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/native/
+android/app/src/main/assets/web/
+scripts/android/ffmpeg-dist/
+scripts/android/.ffmpeg-build/
+scripts/android/dl/
+scripts/android/python-build/
+scripts/android/python-dist/
+*.apk
+*.aab
+
+# Tool/editor state
+.codewhale/
+obsidian docs/.obsidian/
+obsidian docs/Untitled.base
