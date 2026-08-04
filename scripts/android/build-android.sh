@@ -77,9 +77,11 @@ cp "$FF_DIST/ffprobe" "$ASSETS_NATIVE/ffprobe"
 echo "-> ffmpeg + ffprobe OK"
 
 if [ "$FLAVOR" = "enhanced" ]; then
-    echo "==================== 3.5/5 yt-dlp ===================="
-    # TODO: empaquetar python3 arm64 + yt-dlp en $ASSETS_NATIVE/yt-dlp
-    echo "WARN: yt-dlp no se incluye todavia en este build"
+    echo "==================== 3.5/5 Python3 + yt-dlp ===================="
+    "$SCRIPT_DIR/build-python-android.sh"
+    mkdir -p "$ASSETS_NATIVE/python3"
+    cp -r "$SCRIPT_DIR/python-dist/arm64-v8a/python/." "$ASSETS_NATIVE/python3/"
+    echo "-> python3 + yt-dlp OK ($(du -sh "$ASSETS_NATIVE/python3" | cut -f1))"
 fi
 
 echo "==================== 4/5 Web assets ===================="

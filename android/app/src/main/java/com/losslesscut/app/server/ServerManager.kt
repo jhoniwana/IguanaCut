@@ -23,6 +23,9 @@ class ServerManager(private val appContext: Context) {
         BinaryExtractor.extractNative(appContext)
         BinaryExtractor.extractWeb(appContext)
         binaryDir = File(appContext.filesDir, "native")
+        if (BuildConfig.ENABLE_YTDLP) {
+            BinaryExtractor.writeYtdlpWrapper(appContext, binaryDir!!)
+        }
         ConfigGenerator.write(appContext, binaryDir!!, BuildConfig.ENABLE_YTDLP)
     }
 
