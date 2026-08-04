@@ -37,7 +37,7 @@ backend/scripts/models/
 backups/
 
 # Symlinks
-web
+/web
 
 # InsightFace models
 .insightface/
@@ -54,6 +54,7 @@ logs/
 *.log
 /backend/server
 /backend/lossless-cut-server
+/backend/web/
 
 # Android
 android/.gradle/

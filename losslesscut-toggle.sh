@@ -4,12 +4,15 @@
 
 set -e
 
-APP_DIR="/home/jhon/losslesscut"
+# Derive paths from this script's location so it works anywhere
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINARY="$APP_DIR/backend/server"
 CONFIG="$APP_DIR/backend/config/config.yaml"
 LOG_DIR="$APP_DIR/logs"
 PID_FILE="$APP_DIR/server.pid"
-URL="http://localhost:8090"
+PORT=$(grep -E '^\s+port:' "$CONFIG" 2>/dev/null | awk '{print $2}' | head -1)
+PORT="${PORT:-8090}"
+URL="http://localhost:$PORT"
 
 mkdir -p "$LOG_DIR"
 
@@ -17,7 +20,7 @@ is_running() {
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
         return 0
     fi
-    if pgrep -f "server -config config/config.yaml" >/dev/null 2>&1; then
+    if pgrep -f "$BINARY" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -27,7 +30,7 @@ get_pid() {
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
         cat "$PID_FILE"
     else
-        pgrep -f "server -config config/config.yaml" | head -1
+        pgrep -f "$BINARY" | head -1
     fi
 }
 

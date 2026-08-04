@@ -1,18 +1,22 @@
 #!/bin/bash
 
 # LosslessCut Web Server Manager
-# Gestiona el servidor en el puerto 8082
+# Gestiona el servidor (puerto configurado en backend/config/config.yaml)
 # Uso: ./server.sh [start|stop|restart|status|logs|build]
 
 set -e
 
-# Configuracion
-PORT=8082
-BACKEND_DIR="/root/losslesscut-web/backend"
-FRONTEND_DIR="/root/losslesscut-web"
-LOG_DIR="/root/losslesscut-web/logs"
-PID_FILE="/root/losslesscut-web/server.pid"
-LOG_FILE="/root/losslesscut-web/server.log"
+# Configuracion (rutas derivadas del script -> funciona en cualquier maquina)
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKEND_DIR="$APP_DIR/backend"
+FRONTEND_DIR="$APP_DIR"
+LOG_DIR="$APP_DIR/logs"
+PID_FILE="$APP_DIR/server.pid"
+LOG_FILE="$LOG_DIR/backend.log"
+CONFIG="$BACKEND_DIR/config/config.yaml"
+BINARY="$BACKEND_DIR/server"
+PORT=$(grep -E '^\s+port:' "$CONFIG" 2>/dev/null | awk '{print $2}' | head -1)
+PORT="${PORT:-8090}"
 
 # Colores
 RED='\033[0;31m'
@@ -81,8 +85,13 @@ start_server() {
     log "Iniciando servidor en puerto $PORT..."
     cd "$BACKEND_DIR"
 
+    # Construir si el binario no existe
+    if [ ! -x "$BINARY" ]; then
+        make build > "$LOG_DIR/backend-build.log" 2>&1
+    fi
+
     # Iniciar en segundo plano
-    nohup ./lossless-cut-server > "$LOG_FILE" 2>&1 &
+    nohup "$BINARY" -config "$CONFIG" > "$LOG_FILE" 2>&1 &
     PID=$!
     echo $PID > "$PID_FILE"
 

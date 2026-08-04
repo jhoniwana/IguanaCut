@@ -26,7 +26,7 @@ if [ $? -eq 0 ]; then
         echo "✅ Reconstrucción completada exitosamente!"
         echo ""
         echo "📍 Accede a la aplicación en:"
-        echo "   http://localhost:8080"
+        echo "   http://localhost:8090"
         echo ""
 
         # Esperar un momento para que el servidor inicie

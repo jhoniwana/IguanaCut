@@ -3,10 +3,10 @@
 
 import json, os, shutil, http.server, urllib.request, urllib.error
 
-STORAGE = "/home/jhon/lossless/storage"
+STORAGE = os.environ.get("LOSSLESSCUT_STORAGE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage"))
 VIDEOS_DIR = os.path.join(STORAGE, "videos")
-GO = "http://127.0.0.1:8082"
-PORT = 8080
+GO = os.environ.get("LOSSLESSCUT_GO", "http://127.0.0.1:8090")
+PORT = int(os.environ.get("LOSSLESSCUT_PROXY_PORT", "8095"))
 
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 

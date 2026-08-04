@@ -1,98 +1,160 @@
 # LosslessCut Web
 
+> 📡 Guía operativa y de referencia rápida. Para arquitectura completa, ver [[BRAIN]]. Para issues conocidos, ver [[Known Issues]]. Para la paleta de colores, ver [[Theme — Purple]].
+
 Editor de video/audio sin pérdida vía navegador (FFmpeg + Go + React).
 
 ## Stack
 
-- **Frontend**: React 18, TypeScript, Vite, Framer Motion, react-icons
-- **Backend**: Go, Gin, Zap (logging), Viper (config)
-- **Procesamiento**: FFmpeg (static binary), FFprobe, yt-dlp
-- **Proxy**: Python (fix_metadata.py — guarda metadatos JSON en uploads/downloads)
+- **Frontend**: React 18, TypeScript, Vite 6, Framer Motion 9, react-icons, i18next
+- **Backend**: Go 1.21+, Gin, Zap (logging), Viper (config)
+- **Procesamiento**: FFmpeg 6.0+ (static con libx264), FFprobe, yt-dlp
+- **Testing**: Vitest (frontend), Go testing (backend)
 
-## Servicios
+## Puertos
 
-| Servicio | Puerto | Descripción |
-|----------|--------|-------------|
-| Go backend | `:8082` | API + sirve frontend estático |
-| Python proxy | `:8080` | Proxy transparente → :8082, guarda metadatos |
+| Entorno | Puerto | Qué corre |
+|---------|--------|-----------|
+| Dev frontend | `3001` | Vite dev server con hot reload, proxy API → `:8090` |
+| Dev backend | `8090` | Go server en modo desarrollo |
+| Producción | `8080` | Go server sirviendo frontend + API |
+| Docker | `8080` | Contenedor expuesto |
+| Android | `8090` | localhost interno de la app |
 
 ## Inicio rápido
 
 ```bash
-# Build frontend
-cd /home/jhon/lossless && yarn build:web
+# Desarrollo con hot reload
+# Terminal 1: Backend
+cd backend && make dev          # Puerto 8090 (requiere air)
 
-# Build Go binary
-cd /home/jhon/lossless/backend && /tmp/go/bin/go build -o lossless-cut-server ./cmd/server/
+# Terminal 2: Frontend
+yarn dev:web                    # Puerto 3001
 
-# Iniciar backend (puerto 8082)
-cd /home/jhon/lossless/backend && setsid ./lossless-cut-server -config ./config/config.yaml &>/tmp/server.log &
+# Build producción
+yarn build:web                  # Frontend → backend/web/
+cd backend && make build        # Binario Go
+./lossless-cut-server           # Puerto 8080
 
-# Iniciar proxy (puerto 8080)
-cd /home/jhon/lossless && setsid python3 fix_metadata.py &>/tmp/proxy.log &
+# Docker
+docker-compose -f backend/docker-compose.yml up -d
 ```
-
-Acceder en: `http://<IP>:8080`
 
 ## Configuración
 
 `backend/config/config.yaml`:
 
-- `storage.base_path`: directorio de almacenamiento (`/home/jhon/lossless/storage`)
-- `ffmpeg.path`: ruta al binario FFmpeg estático (`/home/jhon/lossless/backend/ffmpeg-static`)
-- `ffmpeg.ffprobe_path`: ruta a FFprobe estático
-- `server.port`: puerto del backend Go (8082)
-- `storage.auto_cleanup: false` — no borra archivos viejos automáticamente
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8080
+  max_upload_size: 10737418240  # 10 GB
+  production: false
+  cors_origins: ["*"]
+
+storage:
+  base_path: /var/losslesscut    # En desarrollo: ./storage/
+  auto_cleanup: true
+  cleanup_after_days: 7
+
+ffmpeg:
+  path: ffmpeg                  # O ruta a binario estático
+  ffprobe_path: ffprobe
+  threads: 0                    # Auto
+
+ytdlp:
+  path: yt-dlp
+  max_quality: 1080p
+```
+
+Variables de entorno: prefijo `LOSSLESSCUT_` (ej: `LOSSLESSCUT_SERVER_PORT=8080`).
 
 ## Directorios de almacenamiento
 
 ```
-storage/
+{base_path}/
 ├── uploads/       # Videos subidos
-├── downloads/     # Videos descargados (yt-dlp)
 ├── videos/        # Metadatos JSON de videos
-├── projects/      # Proyectos guardados
+├── projects/      # Proyectos .llc (JSON)
 ├── outputs/       # Exportaciones
+├── downloads/     # Descargas yt-dlp / URLs
 ├── temp/          # Archivos temporales
-├── waveforms/     # Waveforms generados
-└── screenshots/   # Screenshots/thumbnails
+├── waveforms/     # Caché de waveforms (PNG)
+└── screenshots/   # Screenshots y thumbnails (JPG)
 ```
 
 ## FFmpeg (static binary)
 
-Fedora no incluye libx264 en su FFmpeg por políticas de patentes. Se usa un build estático de johnvansickle.com.
-
-- **Binario**: `/home/jhon/lossless/backend/ffmpeg-static`
-- **FFprobe**: `/home/jhon/lossless/backend/ffprobe-static`
-- Soporta libx264, libx265, AAC, etc.
+En distribuciones como Fedora, el FFmpeg del sistema no incluye libx264 por patentes. Solución: usar un build estático de [johnvansickle.com](https://johnvansickle.com/ffmpeg/). Se configura en `ffmpeg.path` del `config.yaml`. Ver [[Known Issues#FFmpeg sin libx264 en Fedora (RESUELTO)]].
 
 ## Endpoints API
 
 ### Videos
-- `GET /api/videos` — Listar (filtrados por X-Session-ID)
-- `POST /api/videos/upload` — Subir archivo
-- `GET /api/videos/:id/stream` — Stream con range requests
-- `GET /api/videos/:id/thumbnail` — Thumbnail (screenshot en t=0)
-- `POST /api/videos/:id/screenshot` — Capturar screenshot
+- `GET /api/videos` — Listar (filtrados por `X-Session-ID`)
+- `POST /api/videos/upload` — Subir archivo (multipart)
+- `POST /api/videos/batch-upload` — Subida múltiple
+- `POST /api/videos/check-compat` — Compatibilidad de codecs entre archivos
+- `POST /api/videos/download` — Descargar de URL (TODO)
+- `GET /api/videos/:id/stream` — Streaming con HTTP Range requests
+- `GET /api/videos/:id/waveform` — Waveform (PNG cacheado)
+- `GET /api/videos/:id/thumbnail` — Thumbnail del video
+- `POST /api/videos/:id/screenshot` — Capturar screenshot en timestamp
+- `POST /api/videos/:id/detect-faces` — Detectar rostros (Python/OpenCV)
 - `PUT /api/videos/:id` — Renombrar (`{ file_name: "..." }`)
-- `DELETE /api/videos/:id` — Eliminar
+- `DELETE /api/videos/:id` — Eliminar video y archivo
+
+### Watermarks
+- `POST /api/watermarks/upload` — Subir watermark
+- `GET /api/watermarks/:filename` — Servir watermark
+- `DELETE /api/watermarks/:filename` — Eliminar watermark
 
 ### Proyectos
-- `POST /api/projects` / `GET /api/projects` / `PUT /api/projects/:id` / `DELETE /api/projects/:id`
-- `POST /api/projects/:id/export` — Exportar segmentos
+- `POST /api/projects` — Crear proyecto
+- `GET /api/projects` — Listar proyectos
+- `GET /api/projects/:id` — Obtener proyecto
+- `PUT /api/projects/:id` — Actualizar proyecto
+- `DELETE /api/projects/:id` — Eliminar proyecto
+- `POST /api/projects/:id/export` — Exportar/cortar segmentos
 - `POST /api/projects/:id/segments` — Agregar segmento
+- `PUT /api/projects/:id/segments/:segId` — Actualizar segmento
+- `DELETE /api/projects/:id/segments/:segId` — Eliminar segmento
 
-### Descargas (yt-dlp)
-- `POST /api/download` — Descargar de URL
-- `GET /api/download/:id/status` — Estado de descarga
+### Timeline (Multi-clip)
+- `POST /api/timeline/projects` — Crear proyecto multi-fuente
+- `GET /api/timeline/projects` / `GET .../:id` / `PUT .../:id` / `DELETE .../:id`
+- `POST /api/timeline/projects/:id/clips` — Agregar clip
+- `PUT /api/timeline/projects/:id/clips/:clipId` — Actualizar clip
+- `DELETE /api/timeline/projects/:id/clips/:clipId` — Eliminar clip
+- `POST /api/timeline/projects/:id/reorder` — Reordenar clips
+- `POST /api/timeline/projects/:id/sources` — Agregar fuente de video
+- `DELETE /api/timeline/projects/:id/sources/:videoId` — Quitar fuente
+- `POST /api/timeline/projects/:id/export` — Exportar timeline
+
+### Preview
+- `POST /api/preview` — Generar preview con efectos (crop, blur)
+
+### Descargas (yt-dlp + URL directa)
+- `POST /api/downloads` — Iniciar descarga
+- `GET /api/downloads` — Listar descargas
+- `GET /api/downloads/:id` — Estado de descarga
+- `POST /api/downloads/:id/cancel` — Cancelar descarga
+- `DELETE /api/downloads` — Limpiar todas
 
 ### Operaciones
-- `GET /api/operations/:id` — Estado de exportación/procesamiento
+- `GET /api/operations/:id` — Progreso de exportación/procesamiento
 
 ### Sistema
 - `GET /health` — Health check
+- `GET /api/system/info` — Versiones FFmpeg, yt-dlp, etc.
+- `GET /api/system/stats` — Estadísticas del servidor
+- `DELETE /api/system/clear-all` — Borrar datos de sesión
 - `POST /api/system/session/start` — Iniciar sesión
-- `POST /api/system/session/heartbeat` — Heartbeat de sesión
+- `POST /api/system/session/heartbeat` — Heartbeat (cada 30s)
+- `POST /api/system/session/end` — Terminar sesión
+
+### Descarga de archivos
+- `GET /api/outputs/:filename` — Descargar video exportado
+- `GET /api/screenshots/:filename` — Descargar screenshot
 
 ## Headers
 
@@ -101,41 +163,51 @@ Todas las requests deben incluir:
 X-Session-ID: sess_<random>_<timestamp>
 ```
 
-El frontend genera un sessionId al cargar y lo persiste en `sessionIdRef`.
+El frontend genera un `sessionId` al cargar (`App.web.tsx`, `sessionIdRef`) y lo envía en cada request. El backend lo usa para aislar datos entre usuarios.
 
-## Almacenamiento de sesión
+## Almacenamiento de sesión (localStorage)
 
-- `localStorage['losslesscut_last_video']`: último video abierto
-- `localStorage['losslesscut_last_project']`: último proyecto abierto
-- Al recargar la página, se restaura automáticamente el último video/proyecto
+- `losslesscut_last_video`: último video abierto — se restaura al recargar
+- `losslesscut_last_project`: último proyecto abierto
 
 ## Exportación de segmentos
 
-- **Sin filtros** (sin crop, sin blur): Re-encode con `libx264 ultrafast CRF 17` (frame-accurate)
-- **Con filtros**: Re-encode con filtros aplicados
-- **Con blur automático**: Corta a temp, aplica blur, concatena
+- **Sin efectos** (sin crop, blur, watermark): Re-encode con `libx264 ultrafast CRF 17` — frame-accurate
+- **Merge**: Corta cada segmento → concatena con FFmpeg concat demuxer
+- **Separate**: Un archivo por segmento
+- **Con blur**: Corta a temp → Python/OpenCV → concatena
+- **Con crop, watermark, intro/outro**: Filtros FFmpeg aplicados en el pipeline
 
-El re-encode es necesario para precisión de fotogramas. Si solo se requiere velocidad y la alineación con keyframes es aceptable, cambiar `CutVideo` → `CutVideoLossless` en `operation_service.go:1179`.
+El re-encode es necesario para precisión de fotogramas — ver [[Known Issues#Exportación duración incorrecta (RESUELTO)]]. Si solo se requiere velocidad y la alineación con keyframes es aceptable, usar `CutVideoLossless` (`-c copy`) en `operation_service.go`. Para el pipeline completo, ver [[BRAIN#8.1 Flujo de Edición (Single Video)]].
 
-## Keyboard shortcuts (VideoEditor)
+## Keyboard Shortcuts (VideoEditor)
 
 | Tecla | Acción |
 |-------|--------|
-| Space | Play/Pause |
-| I | Marcar inicio del fragmento |
-| O | Marcar fin y crear fragmento |
-| ← / → | Retroceder/avanzar 1s |
-| Shift+← / Shift+→ | Retroceder/avanzar 0.1s |
+| `Space` | Play/Pause |
+| `I` | Marcar inicio del segmento (In) |
+| `O` | Marcar fin y crear segmento (Out) |
+| `←` / `→` | Retroceder/avanzar 1s |
+| `Shift+←` / `Shift+→` | Retroceder/avanzar 0.1s |
+| `Ctrl+Wheel` | Zoom del timeline |
+| `Hold ←/→` | Frame-by-frame playback con auto-aceleración (1x→10x) |
 
-## Atajos de segmentos
+> Para el mapeo completo de 100+ atajos disponibles en el frontend, ver [[BRAIN#4.2 Componentes]].
 
-- Al crear un nuevo fragmento con I→O, se deseleccionan automáticamente los anteriores
-- Solo se exportan los fragmentos seleccionados (checkbox en la sidebar)
+## Flujo de trabajo típico
+
+1. Subir video → `POST /api/videos/upload`
+2. Abrir editor → `GET /api/videos/:id/stream`
+3. Marcar segmentos con `I` y `O`
+4. Opcional: ajustar crop, blur, watermark, intro/outro
+5. Exportar → `POST /api/projects/:id/export`
+6. Monitorear progreso → `GET /api/operations/:id`
+7. Descargar resultado → `GET /api/outputs/:filename`
 
 ## Thumbnails
 
-La lista de archivos muestra thumbnails reales del video generados con FFmpeg screenshot en t=0. Fallback a ícono SVG si falla la generación.
+La lista de archivos muestra thumbnails reales generados con FFmpeg (`-ss 0 -vframes 1`). Cache: `max-age=86400`. Fallback a ícono SVG si falla.
 
 ## Renombrar archivos
 
-Botón de lápiz en cada archivo de la lista → input inline → `PUT /api/videos/:id` con `{ file_name }` → se actualiza el JSON de metadatos.
+Botón de lápiz en cada archivo → input inline → `PUT /api/videos/:id` con `{ file_name }` → actualiza JSON de metadatos y refresca UI.

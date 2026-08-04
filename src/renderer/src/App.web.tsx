@@ -41,6 +41,9 @@ const colors = {
   gradientAccent: 'linear-gradient(135deg, #A78BFA 0%, #C084FC 100%)',
 };
 
+// Ocultar la descarga desde URL (se usa en builds para distribucion publica)
+const HIDE_URL_DOWNLOAD = import.meta.env.VITE_HIDE_URL_DOWNLOAD === '1';
+
 interface VideoFile {
   id: string;
   file_name: string;
@@ -533,33 +536,35 @@ export default function App() {
             Subir Video
           </motion.button>
 
-          <motion.button
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 200, 0, 0.4)' }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              setFileManagerTab('download');
-              setShowFileManager(true);
-            }}
-            style={{
-              background: colors.accent,
-              color: '#000',
-              padding: '20px 32px',
-              borderRadius: '9999px',
-              fontSize: '17px',
-              fontWeight: '700',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              boxShadow: '0 6px 25px rgba(255, 200, 0, 0.3)',
-              transition: 'box-shadow 0.2s ease',
-            }}
-          >
-            <FiLink size={22} />
-            Descargar desde URL
-          </motion.button>
+          {!HIDE_URL_DOWNLOAD && (
+            <motion.button
+              whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 200, 0, 0.4)' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                setFileManagerTab('download');
+                setShowFileManager(true);
+              }}
+              style={{
+                background: colors.accent,
+                color: '#000',
+                padding: '20px 32px',
+                borderRadius: '9999px',
+                fontSize: '17px',
+                fontWeight: '700',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: '0 6px 25px rgba(255, 200, 0, 0.3)',
+                transition: 'box-shadow 0.2s ease',
+              }}
+            >
+              <FiLink size={22} />
+              Descargar desde URL
+            </motion.button>
+          )}
 
           <motion.button
             whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(0, 255, 136, 0.4)' }}
@@ -838,6 +843,7 @@ export default function App() {
                     <FiHardDrive size={16} />
                     Archivos ({videos.length})
                   </button>
+                  {!HIDE_URL_DOWNLOAD && (
                   <button
                     onClick={() => setFileManagerTab('download')}
                     style={{
@@ -860,6 +866,7 @@ export default function App() {
                     <FiLink size={16} />
                     Descargar URL
                   </button>
+                  )}
                 </div>
               </div>
 
@@ -870,7 +877,7 @@ export default function App() {
                 overflowY: 'auto',
               }}>
                 {/* Download Tab */}
-                {fileManagerTab === 'download' && (
+                {!HIDE_URL_DOWNLOAD && fileManagerTab === 'download' && (
                   <div style={{ padding: '8px 0' }}>
                     {/* URL Input */}
                     <div style={{

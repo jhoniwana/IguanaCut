@@ -7,7 +7,7 @@ server:
     - "*"
 
 storage:
-  base_path: /home/jhon/losslesscut/storage
+  base_path: ${HOME}/losslesscut/storage
   auto_cleanup: false
   cleanup_after_days: 7
 
