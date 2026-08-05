@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       NDK_VERSION: "27.1.12297006"
     steps:
       - uses: actions/checkout@v4
