@@ -50,7 +50,7 @@ if [ "${JAVA_MAJOR:-0}" -gt 21 ]; then
         V=$("$CAND/bin/java" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p')
         if [ "$V" -ge 17 ] && [ "$V" -le 21 ]; then
             export JAVA_HOME="$CAND"
-            echo "-> Gradle no soporta Java $JAVA_MAJOR; usando JAVA_HOME=$JAVA_HOME (Java $V)"
+            echo "-> Gradle doesn't support Java $JAVA_MAJOR; using JAVA_HOME=$JAVA_HOME (Java $V)"
             break
         fi
     done

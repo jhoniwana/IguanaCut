@@ -96,6 +96,8 @@ export default function App() {
   const [downloadStatus, setDownloadStatus] = useState('');
   const [downloadId, setDownloadId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [completedDownloadName, setCompletedDownloadName] = useState<string | null>(null);
+  const [completedDownloadId, setCompletedDownloadId] = useState<string | null>(null);
   const [renamingVideoId, setRenamingVideoId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
@@ -175,7 +177,7 @@ export default function App() {
   };
 
   const deleteVideo = async (id: string) => {
-    if (!confirm('¿Eliminar este video?')) return;
+    if (!confirm('Delete this video?')) return;
     try {
       await fetch(`/api/videos/${id}`, { method: 'DELETE', headers: sessHeaders() });
       setVideos(videos.filter(v => v.id !== id));
@@ -184,7 +186,7 @@ export default function App() {
     }
   };
 
-  // --- Archivos exportados (cortes) ---
+  // --- Exported files (cuts) ---
   const loadOutputs = async () => {
     setIsLoadingOutputs(true);
     try {
@@ -197,7 +199,7 @@ export default function App() {
   };
 
   const deleteOutput = async (file_name: string) => {
-    if (!confirm(`¿Eliminar "${file_name}"?`)) return;
+    if (!confirm(`Delete "${file_name}"?`)) return;
     setDeletingOutput(file_name);
     try {
       await apiClient.deleteOutput(file_name);
@@ -222,6 +224,29 @@ export default function App() {
     const bridge = (window as any).AndroidBridge;
     if (bridge?.shareFile) {
       bridge.shareFile(file_name);
+    } else {
+      downloadOutput(file_name);
+    }
+  };
+
+  // Play a file (cut or download): system player
+  // Android (bridge.openVideo) or the browser on desktop.
+  const playOutput = (file_name: string, downloadId?: string) => {
+    const bridge = (window as any).AndroidBridge;
+    if (bridge?.openVideo) {
+      bridge.openVideo(file_name);
+    } else if (downloadId) {
+      window.open(`/api/downloads/${downloadId}/file`, '_blank');
+    } else {
+      downloadOutput(file_name);
+    }
+  };
+
+  // Save the file to the Android gallery (MediaStore).
+  const saveToGallery = (file_name: string) => {
+    const bridge = (window as any).AndroidBridge;
+    if (bridge?.saveToGallery) {
+      bridge.saveToGallery(file_name);
     } else {
       downloadOutput(file_name);
     }
@@ -304,7 +329,7 @@ export default function App() {
   }, []);
 
   const handleClearAll = async () => {
-    if (!confirm('¿ELIMINAR TODOS LOS DATOS?\n\n¡Esta acción no se puede deshacer!')) return;
+    if (!confirm('DELETE ALL DATA?\n\nThis action cannot be undone!')) return;
     setIsClearing(true);
     try {
       await fetch('/api/system/clear-all', { method: 'DELETE', headers: sessHeaders() });
@@ -344,7 +369,7 @@ export default function App() {
   // Start download from URL (YouTube, etc.)
   const startDownload = async () => {
     if (!downloadUrl.trim()) {
-      setDownloadError('Pega una URL primero (ej. https://youtube.com/watch?v=...)');
+      setDownloadError('Paste a URL first (e.g. https://youtube.com/watch?v=...)');
       return;
     }
 
@@ -352,6 +377,8 @@ export default function App() {
     setDownloadProgress(0);
     setDownloadStatus('Iniciando descarga...');
     setDownloadError(null);
+    setCompletedDownloadName(null);
+    setCompletedDownloadId(null);
 
     try {
       const res = await fetch('/api/downloads', {
@@ -364,9 +391,9 @@ export default function App() {
         const text = await res.text();
         try {
           const errorData = JSON.parse(text);
-          throw new Error(errorData.error || 'Error al iniciar descarga');
+          throw new Error(errorData.error || 'Error starting download');
         } catch {
-          throw new Error('Error al iniciar descarga');
+          throw new Error('Error starting download');
         }
       }
 
@@ -374,7 +401,7 @@ export default function App() {
       setDownloadId(data.id);
       pollDownloadStatus(data.id);
     } catch (error: any) {
-      setDownloadError(error.message || 'Error desconocido');
+      setDownloadError(error.message || 'Unknown error');
       setIsDownloading(false);
     }
   };
@@ -389,7 +416,7 @@ export default function App() {
       if (retries > maxRetries) {
         clearInterval(poll);
         setIsDownloading(false);
-        setDownloadError('Tiempo de espera agotado');
+        setDownloadError('Timed out');
         return;
       }
 
@@ -405,7 +432,7 @@ export default function App() {
         if (data.status === 'downloading') {
           setDownloadStatus(`Descargando... ${progress.toFixed(1)}%`);
         } else if (data.status === 'processing') {
-          setDownloadStatus('Procesando video...');
+          setDownloadStatus('Processing video...');
         } else {
           setDownloadStatus(data.status_text || data.status || 'Trabajando...');
         }
@@ -416,7 +443,9 @@ export default function App() {
           setDownloadUrl('');
           setDownloadId(null);
           setDownloadProgress(100);
-          setDownloadStatus('¡Descarga completada!');
+          setDownloadStatus('Download complete!');
+          setCompletedDownloadName((data.file_path || '').split('/').pop() || null);
+          setCompletedDownloadId(data.id || null);
 
           // Get the video ID and open editor automatically
           const videoId = data.video_id;
@@ -435,7 +464,7 @@ export default function App() {
         } else if (data.status === 'failed' || data.status === 'error') {
           clearInterval(poll);
           setIsDownloading(false);
-          setDownloadError(data.error || data.status_text || 'Descarga fallida');
+          setDownloadError(data.error || data.status_text || 'Download failed');
         }
       } catch (error) {
         // Don't stop on network errors, just log
@@ -448,38 +477,38 @@ export default function App() {
     {
       step: 1,
       icon: <FiUpload size={28} />,
-      title: 'Sube tu video',
-      description: 'Selecciona un archivo de tu computadora para comenzar a editarlo.',
+      title: 'Upload your video',
+      description: 'Select a file from your computer to start editing it.',
     },
     {
       step: 2,
       icon: <IoMdPlay size={28} />,
-      title: 'Navega al punto de inicio',
-      description: 'Usa las flechas ← → para moverte. Shift+flechas para movimientos precisos.',
+      title: 'Go to the start point',
+      description: 'Use the ← → arrows to move. Shift+arrows for precise moves.',
     },
     {
       step: 3,
       icon: <span style={{ fontSize: '24px', fontWeight: 'bold', color: colors.accent }}>I</span>,
-      title: 'Marca el inicio',
-      description: 'Presiona "I" para marcar donde inicia tu clip.',
+      title: 'Set the start',
+      description: 'Press "I" to mark where your clip starts.',
     },
     {
       step: 4,
       icon: <span style={{ fontSize: '24px', fontWeight: 'bold', color: colors.secondary }}>O</span>,
-      title: 'Marca el final',
-      description: 'Presiona "O" para crear el clip automáticamente.',
+      title: 'Set the end',
+      description: 'Press "O" to create the clip automatically.',
     },
     {
       step: 5,
       icon: <MdBlurOn size={28} />,
-      title: 'Censura rostros',
-      description: 'Activa la censura automática de rostros en los clips que necesites.',
+      title: 'Face blur',
+      description: 'Enable automatic face blur on the clips you need.',
     },
     {
       step: 6,
       icon: <IoMdDownload size={28} />,
       title: 'Exporta',
-      description: 'Descarga tu video editado sin perder calidad.',
+      description: 'Download your edited video without losing quality.',
     },
   ];
 
@@ -545,7 +574,7 @@ export default function App() {
                       No hay archivos
                     </h3>
                     <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
-                      Sube un video para comenzar a editar
+                      Upload a video to start editing
                     </p>
                     <button
                       onClick={() => {
@@ -568,7 +597,7 @@ export default function App() {
                       }}
                     >
                       <FiUpload size={18} />
-                      Subir Video
+                      Upload Video
                     </button>
                   </div>
                 ) : (
@@ -762,7 +791,7 @@ export default function App() {
                               }}
                             >
                               <IoMdCreate size={18} />
-                              Renombrar
+                              Rename
                             </button>
                             <button
                               onClick={(e) => {
@@ -785,7 +814,7 @@ export default function App() {
                               }}
                             >
                               <FiTrash2 size={18} />
-                              Eliminar
+                              Delete
                             </button>
                           </div>
 
@@ -804,6 +833,90 @@ export default function App() {
                             <span>💾 {formatFileSize(video.size)}</span>
                             <span>🕒 {video.created_at ? new Date(video.created_at).toLocaleDateString() : ''}</span>
                           </div>
+
+                          {/* Cortes exportados de este video */}
+                          {(() => {
+                            const cuts = outputs.filter(o => o.video_id === video.id);
+                            return (
+                              <div style={{
+                                marginTop: '12px',
+                                paddingTop: '10px',
+                                borderTop: `1px solid ${colors.border}`,
+                              }}>
+                                <div style={{
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  color: colors.textSecondary,
+                                  marginBottom: '8px',
+                                }}>
+                                  ✂️ Cortes ({cuts.length})
+                                </div>
+                                {cuts.length === 0 ? (
+                                  <p style={{ color: colors.textMuted, fontSize: '12px', margin: 0 }}>
+                                    No exported cuts for this video yet
+                                  </p>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {cuts.map((cut) => (
+                                      <div key={cut.file_name} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        background: colors.surface,
+                                        borderRadius: '8px',
+                                        padding: '8px 10px',
+                                      }}>
+                                        <span style={{
+                                          flex: 1,
+                                          minWidth: 0,
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          fontSize: '12px',
+                                          color: colors.text,
+                                        }}>
+                                          {cut.file_name}
+                                        </span>
+                                        <span style={{ fontSize: '11px', color: colors.textMuted, flexShrink: 0 }}>
+                                          {formatFileSize(cut.size)}
+                                        </span>
+                                        <button onClick={() => playOutput(cut.file_name)} title="Play" style={{
+                                          background: colors.primary, border: 'none', color: '#000',
+                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                        }}>
+                                          <IoMdPlay size={14} />
+                                        </button>
+                                        <button onClick={() => shareOutput(cut.file_name)} title="Share" style={{
+                                          background: colors.card, border: `1px solid ${colors.border}`, color: colors.primary,
+                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                        }}>
+                                          <FiShare2 size={13} />
+                                        </button>
+                                        {IS_ANDROID && (
+                                        <button onClick={() => saveToGallery(cut.file_name)} title="Save to gallery" style={{
+                                          background: colors.card, border: `1px solid ${colors.border}`, color: colors.text,
+                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                        }}>
+                                          <IoMdCloudDownload size={13} />
+                                        </button>
+                                        )}
+                                        <button onClick={() => deleteOutput(cut.file_name)} title="Delete" style={{
+                                          background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger,
+                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                        }}>
+                                          <FiTrash2 size={13} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       </>
@@ -857,12 +970,36 @@ export default function App() {
             No hay exportaciones
           </h3>
           <p style={{ color: colors.textMuted, margin: 0, fontSize: '13px' }}>
-            Tus cortes exportados van a aparecer acá
+            Your exported cuts will show up here
           </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {outputs.map((output) => (
+          {(() => {
+            // Agrupar los cortes por video de origen
+            const byVideo = new Map<string, OutputFile[]>();
+            for (const o of outputs) {
+              const key = o.video_id || '__none__';
+              if (!byVideo.has(key)) byVideo.set(key, []);
+              byVideo.get(key)!.push(o);
+            }
+            const videoName = (id: string) => {
+              if (id === '__none__') return 'Sin vincular';
+              const v = videos.find((x) => x.id === id);
+              return v ? v.file_name : 'Sin vincular';
+            };
+            return Array.from(byVideo.entries()).map(([key, items]) => (
+              <div key={key}>
+                <div style={{
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  color: colors.secondary,
+                  margin: '4px 0 8px',
+                }}>
+                  🎬 {videoName(key)} ({items.length} {items.length === 1 ? 'corte' : 'cortes'})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {items.map((output) => (
             <div
               key={output.file_name}
               style={{
@@ -912,8 +1049,26 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                 <button
+                  onClick={() => playOutput(output.file_name)}
+                  title="Play"
+                  style={{
+                    background: colors.primary,
+                    border: 'none',
+                    color: '#000',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IoMdPlay size={17} />
+                </button>
+                <button
                   onClick={() => shareOutput(output.file_name)}
-                  title="Compartir"
+                  title="Share"
                   style={{
                     background: colors.card,
                     border: `1px solid ${colors.border}`,
@@ -931,7 +1086,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => downloadOutput(output.file_name)}
-                  title="Descargar"
+                  title="Download"
                   style={{
                     background: colors.card,
                     border: `1px solid ${colors.border}`,
@@ -950,7 +1105,7 @@ export default function App() {
                 <button
                   onClick={() => deleteOutput(output.file_name)}
                   disabled={deletingOutput === output.file_name}
-                  title="Eliminar"
+                  title="Delete"
                   style={{
                     background: 'transparent',
                     border: `1px solid ${colors.danger}`,
@@ -969,7 +1124,11 @@ export default function App() {
                 </button>
               </div>
             </div>
-          ))}
+            ))}
+              </div>
+            </div>
+          ));
+        })()}
         </div>
       )}
     </>
@@ -1016,7 +1175,7 @@ export default function App() {
               </h1>
               {!isMobile && (
                 <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>
-                  Edición profesional sin pérdida
+                  Professional lossless editing
                 </p>
               )}
             </div>
@@ -1039,7 +1198,7 @@ export default function App() {
             }}
           >
             <IoMdHelpCircle size={18} color={colors.primary} />
-            {!isMobile && '¿Cómo funciona?'}
+            {!isMobile && 'How does it work?'}
           </button>
         </div>
       </header>
@@ -1087,7 +1246,7 @@ export default function App() {
             fontWeight: '600',
             marginBottom: '12px',
           }}>
-            Edita videos como un profesional
+            Edit videos like a pro
           </h2>
           <p style={{
             color: colors.textSecondary,
@@ -1097,8 +1256,8 @@ export default function App() {
             margin: '0 auto',
           }}>
             {IS_ANDROID
-              ? 'Corta y recorta tus videos sin perder calidad. Simple, rápido y poderoso.'
-              : 'Corta, recorta y censura rostros en tus videos sin perder calidad. Simple, rápido y poderoso.'}
+              ? 'Cut and trim your videos without losing quality. Simple, fast and powerful.'
+              : 'Cut, trim and blur faces in your videos without losing quality. Simple, fast and powerful.'}
           </p>
         </div>
 
@@ -1132,7 +1291,7 @@ export default function App() {
             }}
           >
             <IoMdCloudUpload size={24} />
-            Subir Video
+            Upload Video
           </motion.button>
 
           {!HIDE_URL_DOWNLOAD && (
@@ -1161,7 +1320,7 @@ export default function App() {
             }}
           >
             <FiLink size={22} />
-            Descargar desde URL
+            Download from URL
           </motion.button>
           )}
 
@@ -1216,7 +1375,7 @@ export default function App() {
             }}
           >
             <FiHardDrive size={22} />
-            Mis Archivos
+            My Files
           </motion.button>
         </div>
 
@@ -1231,11 +1390,11 @@ export default function App() {
         }}>
           {[
             { icon: <IoMdCut size={24} />, label: 'Corte preciso', color: colors.primary },
-            { icon: <MdBlurOn size={24} />, label: 'Censura rostros', color: colors.secondary },
-            { icon: <IoMdCheckmarkCircle size={24} />, label: 'Sin pérdida', color: colors.success },
+            { icon: <MdBlurOn size={24} />, label: 'Face blur', color: colors.secondary },
+            { icon: <IoMdCheckmarkCircle size={24} />, label: 'Lossless', color: colors.success },
           ]
             // En Android la censura de rostros no esta disponible (Python/OpenCV)
-            .filter((f) => !(IS_ANDROID && f.label === 'Censura rostros'))
+            .filter((f) => !(IS_ANDROID && f.label === 'Face blur'))
             .map((feature, i) => (
             <div key={i} style={{
               background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
@@ -1292,7 +1451,7 @@ export default function App() {
               }}
             >
               <IoMdCloudUpload size={24} />
-              Subir Video
+              Upload Video
             </motion.button>
 
             {!HIDE_URL_DOWNLOAD && (
@@ -1321,7 +1480,7 @@ export default function App() {
               }}
             >
               <FiLink size={20} />
-              Descargar desde URL
+              Download from URL
             </motion.button>
             )}
 
@@ -1333,31 +1492,13 @@ export default function App() {
             }}>
               <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: colors.text }}>
                 <span style={{ color: colors.primary, marginRight: '8px' }}>◆</span>
-                Mis Archivos
+                My Files
               </h2>
               <span style={{ color: colors.textMuted, fontSize: '13px' }}>
                 {videos.length} {videos.length === 1 ? 'video' : 'videos'}
               </span>
             </div>
             {renderVideoList()}
-
-            {/* Exportaciones (cortes) */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '28px',
-              marginBottom: '12px',
-            }}>
-              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: colors.text }}>
-                <span style={{ color: colors.secondary, marginRight: '8px' }}>◆</span>
-                Mis Exportaciones
-              </h2>
-              <span style={{ color: colors.textMuted, fontSize: '13px' }}>
-                {outputs.length} {outputs.length === 1 ? 'corte' : 'cortes'}
-              </span>
-            </div>
-            {renderOutputList()}
           </div>
         )}
 
@@ -1387,8 +1528,8 @@ export default function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
               { key: 'Espacio', action: 'Play / Pausa' },
-              { key: 'I', action: 'Marcar inicio', keyColor: colors.accent },
-              { key: 'O', action: 'Marcar fin', keyColor: colors.secondary },
+              { key: 'I', action: 'Set start', keyColor: colors.accent },
+              { key: 'O', action: 'Set end', keyColor: colors.secondary },
               { key: '← →', action: '±1 segundo' },
             ].map((item) => (
               <div key={item.key} style={{
@@ -1437,7 +1578,7 @@ export default function App() {
           }}
         >
           <IoMdTrash size={16} />
-          {isClearing ? 'Limpiando...' : 'Limpiar todos los datos'}
+          {isClearing ? 'Clearing...' : 'Clear all data'}
         </button>
 
         {/* Creditos del creador */}
@@ -1574,7 +1715,7 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {fileManagerTab === 'files' ? <FiHardDrive size={22} /> : <IoMdCloudDownload size={22} />}
                     <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700' }}>
-                      {fileManagerTab === 'files' ? 'Mis Archivos' : 'Descargar Video'}
+                      {fileManagerTab === 'files' ? 'My Files' : 'Download Video'}
                     </h2>
                   </div>
                   <button
@@ -1619,7 +1760,7 @@ export default function App() {
                     }}
                   >
                     <FiHardDrive size={16} />
-                    Archivos ({videos.length})
+                    Files ({videos.length})
                   </button>
                   {!HIDE_URL_DOWNLOAD && (
                   <button
@@ -1642,7 +1783,7 @@ export default function App() {
                     }}
                   >
                     <FiLink size={16} />
-                    Descargar URL
+                    Download URL
                   </button>
                   )}
                   <button
@@ -1695,7 +1836,7 @@ export default function App() {
                       }}>
                         <FiLink size={20} color={colors.primary} />
                         <span style={{ color: colors.text, fontWeight: '600', fontSize: '14px' }}>
-                          Pega la URL del video
+                          Paste the video URL
                         </span>
                       </div>
                       <input
@@ -1748,7 +1889,7 @@ export default function App() {
                         ) : (
                           <>
                             <FiDownload size={20} />
-                            Descargar Video
+                            Download Video
                           </>
                         )}
                       </button>
@@ -1798,6 +1939,74 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* Download complete: play or save to gallery */}
+                    {downloadStatus === 'Download complete!' && completedDownloadName && (
+                      <div style={{
+                        background: `${colors.primary}18`,
+                        border: `1px solid ${colors.primary}`,
+                        borderRadius: '14px',
+                        padding: '16px',
+                        marginBottom: '16px',
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          marginBottom: '12px',
+                          color: colors.text,
+                          fontSize: '14px',
+                          fontWeight: '600',
+                        }}>
+                          <IoMdCheckmarkCircle size={20} color={colors.primary} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {completedDownloadName}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => playOutput(completedDownloadName, completedDownloadId || undefined)}
+                            style={{
+                              flex: 1,
+                              background: colors.primary,
+                              border: 'none',
+                              color: '#000',
+                              padding: '12px 16px',
+                              borderRadius: '12px',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                              fontWeight: '700',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                            }}
+                          >
+                            <IoMdPlay size={18} /> Play
+                          </button>
+                          <button
+                            onClick={() => saveToGallery(completedDownloadName)}
+                            style={{
+                              flex: 1,
+                              background: colors.card,
+                              border: `1px solid ${colors.border}`,
+                              color: colors.text,
+                              padding: '12px 16px',
+                              borderRadius: '12px',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                            }}
+                          >
+                            <IoMdCloudDownload size={18} /> Save to gallery
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Download Error */}
                     {downloadError && (
                       <div style={{
@@ -1834,7 +2043,7 @@ export default function App() {
                         flexWrap: 'wrap',
                         gap: '8px',
                       }}>
-                        {['YouTube', 'TikTok', 'Instagram', 'Twitter/X', 'Facebook', 'Vimeo', '+1000 más'].map((site) => (
+                        {['YouTube', 'TikTok', 'Instagram', 'Twitter/X', 'Facebook', 'Vimeo', '+1000 more'].map((site) => (
                           <span key={site} style={{
                             background: colors.card,
                             color: colors.textSecondary,
@@ -1912,7 +2121,7 @@ export default function App() {
                     <span style={{ fontSize: '20px' }}>◆</span>
                   </div>
                   <h2 style={{ color: colors.text, margin: 0, fontSize: '20px', fontWeight: '700' }}>
-                    ¿Cómo usar?
+                    How to use?
                   </h2>
                 </div>
                 <button
@@ -1937,7 +2146,7 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {tutorialSteps
                   // En Android la censura de rostros no esta disponible
-                  .filter((s) => !(IS_ANDROID && s.title === 'Censura rostros'))
+                  .filter((s) => !(IS_ANDROID && s.title === 'Face blur'))
                   .map((s, idx) => ({ ...s, step: idx + 1 }))
                   .map((step) => (
                   <div
@@ -2018,7 +2227,7 @@ export default function App() {
                   boxShadow: '0 4px 20px rgba(12, 182, 145, 0.3)',
                 }}
               >
-                ¡Entendido!
+                Got it!
               </button>
             </div>
           </motion.div>

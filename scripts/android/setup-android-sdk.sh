@@ -15,7 +15,7 @@ mkdir -p "$ANDROID_HOME/cmdline-tools"
 # sdkmanager (commandline tools)
 SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 if [ ! -x "$SDKMGR" ]; then
-    echo "== Descargando commandline-tools =="
+    echo "== Downloading commandline-tools =="
     TMP_ZIP="$(mktemp --suffix=.zip)"
     curl -sSL -o "$TMP_ZIP" \
         "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
@@ -33,6 +33,6 @@ yes | "$SDKMGR" --licenses >/dev/null || true
     "ndk;$NDK_VERSION"
 
 echo ""
-echo "✅ SDK listo. Añade a tu shell:"
+echo "✅ SDK ready. Add to your shell:"
 echo "   export ANDROID_HOME=$ANDROID_HOME"
 echo "   export PATH=\$PATH:$ANDROID_HOME/platform-tools"

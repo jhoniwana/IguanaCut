@@ -22,8 +22,8 @@ NDK="${ANDROID_HOME:?Define ANDROID_HOME}/ndk/${NDK_VERSION:-27.1.12297006}"
 CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
 AR="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
 
-[ -x "$CLANG" ] || { echo "ERROR: NDK no encontrado ($CLANG)" >&2; exit 1; }
-[ -d "$SRC" ] || { echo "ERROR: falta $SRC (descarga de CPython 3.12.10)" >&2; exit 1; }
+[ -x "$CLANG" ] || { echo "ERROR: NDK not found ($CLANG)" >&2; exit 1; }
+[ -d "$SRC" ] || { echo "ERROR: missing $SRC (CPython 3.12.10 download)" >&2; exit 1; }
 
 # El host python se necesita durante el build (generadores); con --enable-shared
 # requiere LD_LIBRARY_PATH a su lib.
@@ -33,7 +33,7 @@ export PATH="$HOSTPY/bin:$PATH"
 cd "$SRC"
 
 if [ ! -f Makefile ]; then
-    echo "== Configurando cross-compile =="
+    echo "== Configuring cross-compile =="
     ./configure \
         --host=aarch64-linux-android --build=x86_64-pc-linux-gnu \
         --prefix="$PREFIX" --enable-shared \

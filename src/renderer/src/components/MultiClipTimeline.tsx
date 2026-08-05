@@ -483,7 +483,7 @@ export default function MultiClipTimeline({
                     e.stopPropagation();
                     onClipEdit?.(clip);
                   }}
-                  title="Doble-clic para editar"
+                  title="Double-click to edit"
                   style={{
                     width: `${clipWidth}%`,
                     minWidth: 50,
@@ -556,7 +556,7 @@ export default function MultiClipTimeline({
                           justifyContent: 'center',
                           fontSize: 10,
                         }}
-                        title="Eliminar clip"
+                        title="Delete clip"
                       >
                         <FiTrash2 size={10} />
                       </button>
@@ -620,7 +620,7 @@ export default function MultiClipTimeline({
               fontSize: 13,
             }}
           >
-            Usa I/O para crear clips desde las fuentes
+            Use I/O to create clips from the sources
           </div>
         )}
 
@@ -772,7 +772,7 @@ export default function MultiClipTimeline({
                       cursor: 'pointer',
                       padding: 4,
                     }}
-                    title="Eliminar clip"
+                    title="Delete clip"
                   >
                     <FiTrash2 size={12} />
                   </button>

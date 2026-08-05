@@ -62,9 +62,9 @@ export interface ClipBlurZone {
 const BLUR_STYLES: { id: BlurStyle; name: string; icon: React.ReactNode; description: string }[] = [
   { id: 'pixelate', name: 'Pixelado', icon: <MdGridOn size={24} />, description: 'Efecto clasico de censura' },
   { id: 'gaussian', name: 'Gaussiano', icon: <MdBlurCircular size={24} />, description: 'Desenfoque suave' },
-  { id: 'color', name: 'Color Solido', icon: <MdColorLens size={24} />, description: 'Cubrir con un color' },
+  { id: 'color', name: 'Color Solido', icon: <MdColorLens size={24} />, description: 'Cover with a color' },
   { id: 'box', name: 'Caja Negra', icon: <BsSquareFill size={20} />, description: 'Rectangulo negro' },
-  { id: 'emoji', name: 'Emoji', icon: <BsEmojiSmile size={22} />, description: 'Cubrir con emoji' },
+  { id: 'emoji', name: 'Emoji', icon: <BsEmojiSmile size={22} />, description: 'Cover with emoji' },
   { id: 'image', name: 'Imagen', icon: <MdImage size={24} />, description: 'Tu propia imagen' },
 ];
 
@@ -87,7 +87,7 @@ const EMOJI_PRESETS = [
   { emoji: '😘', label: 'Beso' },
   { emoji: '💕', label: 'Corazones' },
   { emoji: '👙', label: 'Bikini' },
-  { emoji: '😜', label: 'Guiño' },
+  { emoji: '😜', label: 'Wink' },
 ];
 
 // Segment type for clip time ranges
@@ -342,7 +342,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
           </div>
           <div>
             <div style={{ color: colors.text, fontWeight: '600', fontSize: '15px' }}>
-              Censurar Rostros
+              Blur faces
             </div>
             <div style={{ color: colors.textMuted, fontSize: '11px' }}>
               Detecta y confirma los rostros
@@ -387,7 +387,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
               1
             </div>
             <span style={{ color: colors.text, fontSize: '13px', fontWeight: '500' }}>
-              Detectar rostros en el video
+              Detect faces in video
             </span>
           </div>
           <button
@@ -567,7 +567,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
             color: colors.textMuted,
             fontSize: '12px',
           }}>
-            No se detectaron rostros en el video
+            No faces detected in the video
           </div>
         )}
       </div>
@@ -838,7 +838,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
                   }}
                 >
                   <FiUpload size={24} />
-                  <span style={{ fontSize: '12px' }}>Click para subir imagen</span>
+                  <span style={{ fontSize: '12px' }}>Click to upload image</span>
                   <span style={{ fontSize: '10px', color: colors.textMuted }}>PNG, JPG, GIF</span>
                 </button>
               )}
@@ -959,7 +959,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
         }}>
           <FiDownload size={18} color={colors.primary} />
           <span style={{ color: colors.text, fontSize: '12px' }}>
-            <strong>Listo!</strong> Exporta tu video para aplicar la censura
+            <strong>Done!</strong> Exporta tu video para aplicar la censura
           </span>
         </div>
       )}

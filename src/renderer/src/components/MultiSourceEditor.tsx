@@ -250,7 +250,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
     // Check if any clips use this video
     const hasClips = timelineProject?.timeline_clips.some(c => c.source_video_id === videoId);
     if (hasClips) {
-      showToast('No se puede eliminar: hay clips de este video en la timeline', 'error');
+      showToast('Cannot delete: this video has clips in the timeline', 'error');
       return;
     }
 
@@ -264,7 +264,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
         showToast('Video eliminado del proyecto', 'info');
       } catch (err) {
         console.error('Failed to remove video source:', err);
-        showToast('Error al eliminar video del proyecto', 'error');
+        showToast('Error removing video from project', 'error');
       }
     }
 
@@ -383,7 +383,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               downloadPollRef.current = null;
             }
             setIsDownloading(false);
-            showToast(`Error: ${status.error || 'Descarga fallida'}`, 'error');
+            showToast(`Error: ${status.error || 'Download failed'}`, 'error');
           }
         } catch (err) {
           console.error('Failed to get download status:', err);
@@ -392,7 +392,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
     } catch (err: any) {
       setIsDownloading(false);
       console.error('Download failed:', err);
-      showToast(`Error al descargar: ${err.message || 'Error desconocido'}`, 'error');
+      showToast(`Error al descargar: ${err.message || 'Unknown error'}`, 'error');
     }
   }, [handleSourceAdd, showToast]);
 
@@ -634,10 +634,10 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       const updated = await apiClient.getTimelineProject(timelineProject.id);
       setTimelineProject(updated);
 
-      showToast(`"${existingClip.name}" actualizado`, 'success');
+      showToast(`"${existingClip.name}" updated`, 'success');
     } catch (err) {
       console.error('Failed to update clip:', err);
-      showToast('Error al actualizar clip', 'error');
+      showToast('Error updating clip', 'error');
     }
   }, [timelineProject, showToast]);
 
@@ -649,7 +649,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       await apiClient.deleteTimelineClip(timelineProject.id, clipId);
       const updated = await apiClient.getTimelineProject(timelineProject.id);
       setTimelineProject(updated);
-      showToast('Clip eliminado', 'info');
+      showToast('Clip deleted', 'info');
     } catch (err) {
       console.error('Failed to delete clip:', err);
       showToast('Error al eliminar clip', 'error');
@@ -680,7 +680,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       const updated = await apiClient.getTimelineProject(timelineProject.id);
       setTimelineProject(updated);
       setSelectedClipIds(new Set());
-      showToast(`${selectedClipIds.size} clips eliminados`, 'info');
+      showToast(`${selectedClipIds.size} clips deleted`, 'info');
     } catch (err) {
       console.error('Failed to delete clips:', err);
       showToast('Error al eliminar clips', 'error');
@@ -694,7 +694,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
     const clips = timelineProject.timeline_clips;
     const result = getClipAtTime(clips, timelineTime);
     if (!result) {
-      showToast('No hay clip en esta posición', 'warning');
+      showToast('No clip at this position', 'warning');
       return;
     }
 
@@ -703,7 +703,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
 
     // Don't split if too close to edges
     if (localTime < 0.5 || (clip.source_end - splitPoint) < 0.5) {
-      showToast('Posición muy cerca del borde del clip', 'warning');
+      showToast('Position too close to the clip edge', 'warning');
       return;
     }
 
@@ -725,7 +725,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
 
       const updated = await apiClient.getTimelineProject(timelineProject.id);
       setTimelineProject(updated);
-      showToast('Clip dividido', 'success');
+      showToast('Clip split', 'success');
     } catch (err) {
       console.error('Failed to split clip:', err);
       showToast('Error al dividir clip', 'error');
@@ -852,7 +852,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       }
     }
 
-    showToast(`Editando "${clip.name}" - Presiona O para actualizar fin`, 'info');
+    showToast(`Editing "${clip.name}" - Press O to update end`, 'info');
   }, [sourceMap, activeSource, showToast]);
 
   // Play a specific clip in timeline mode - simplified version using refs
@@ -1010,17 +1010,17 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       setTimelineTime(0);
       // Start from beginning of timeline
       playClipAtIndex(0, false);
-      showToast('Modo Preview Timeline - Presiona Play para reproducir', 'info');
+      showToast('Modo Preview Timeline - Press Play para reproducir', 'info');
     } else {
       setPlaybackMode('source');
-      showToast('Modo edición', 'info');
+      showToast('Edit mode', 'info');
     }
   }, [playbackMode, timelineProject, playClipAtIndex, showToast]);
 
   // Export timeline
   const handleExport = useCallback(async () => {
     if (!timelineProject || timelineProject.timeline_clips.length === 0) {
-      showToast('No hay clips para exportar', 'warning');
+      showToast('No clips to export', 'warning');
       return;
     }
 
@@ -1083,7 +1083,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               exportPollRef.current = null;
             }
             setIsExporting(false);
-            showToast('Exportación completada', 'success');
+            showToast('Export complete', 'success');
 
             // Save filename for manual download
             if (status.output_files && status.output_files.length > 0) {
@@ -1249,7 +1249,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               cursor: 'pointer',
               fontSize: 13,
             }}
-            title="Configurar marca de agua"
+            title="Configure watermark"
           >
             <FiImage size={16} />
             {watermarkConfig.enabled && 'ON'}
@@ -1277,7 +1277,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
             }}
           >
             <IoMdDownload size={18} />
-            {isExporting ? `${Math.round(exportProgress)}%` : (exportedFile ? 'Exportado' : 'Exportar')}
+            {isExporting ? `${Math.round(exportProgress)}%` : (exportedFile ? 'Exportado' : 'Export')}
           </button>
 
           {/* Download button - shown when export is ready */}
@@ -1299,7 +1299,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               }}
             >
               <IoMdDownload size={18} />
-              Descargar
+              Download
             </button>
           )}
 
@@ -1432,7 +1432,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               >
                 <FiUpload size={48} style={{ opacity: 0.5 }} />
                 <p style={{ margin: 0, fontSize: 14 }}>
-                  Agrega videos para comenzar
+                  Add videos to get started
                 </p>
               </div>
             )}
@@ -1453,7 +1453,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
                   color: colors.primary,
                 }}
               >
-                Inicio: {formatTime(pendingCutStart)} → Presiona O para terminar
+                Start: {formatTime(pendingCutStart)} → Press O to finish
               </div>
             )}
 
@@ -1574,7 +1574,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
                 onClick={() => {
                   if (videoRef.current) {
                     setPendingCutStart(videoRef.current.currentTime);
-                    showToast(`Inicio: ${formatTime(videoRef.current.currentTime)}`, 'info');
+                    showToast(`Start: ${formatTime(videoRef.current.currentTime)}`, 'info');
                   }
                 }}
                 style={{
@@ -1669,22 +1669,22 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>⌨️ Atajos de Teclado</h3>
-              <span style={{ fontSize: 12, color: colors.textMuted }}>Presiona ? para ver esta ayuda</span>
+              <span style={{ fontSize: 12, color: colors.textMuted }}>Press ? for help</span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
               {/* Playback */}
               <div>
-                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.primary, fontWeight: 600 }}>▶️ Reproducción</h4>
+                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.primary, fontWeight: 600 }}>▶️ Playback</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {[
                     ['Space / K', 'Play / Pause'],
-                    ['J', 'Rebobinar / Más lento'],
-                    ['L', 'Avance rápido'],
+                    ['J', 'Rewind / Slower'],
+                    ['L', 'Fast forward'],
                     ['← →', 'Saltar ±1s (Shift: ±0.1s)'],
-                    [', .', 'Frame anterior / siguiente'],
-                    ['Home', 'Ir al inicio'],
-                    ['End', 'Ir al final'],
+                    [', .', 'Previous / next frame'],
+                    ['Home', 'Go to start'],
+                    ['End', 'Go to end'],
                   ].map(([key, desc]) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ padding: '3px 8px', backgroundColor: colors.card, borderRadius: 4, fontSize: 11, fontWeight: 600, minWidth: 70, textAlign: 'center', border: `1px solid ${colors.border}` }}>{key}</span>
@@ -1696,15 +1696,15 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
 
               {/* Editing */}
               <div>
-                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.secondary, fontWeight: 600 }}>✂️ Edición</h4>
+                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.secondary, fontWeight: 600 }}>✂️ Editing</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {[
-                    ['I', 'Marcar inicio de clip'],
-                    ['O', 'Marcar fin y crear clip'],
+                    ['I', 'Set clip start'],
+                    ['O', 'Set end & create clip'],
                     ['S', 'Dividir clip en playhead'],
-                    ['Del / ⌫', 'Eliminar clip(s)'],
-                    ['Ctrl+A', 'Seleccionar todos los clips'],
-                    ['Esc', 'Cancelar / Deseleccionar'],
+                    ['Del / ⌫', 'Delete clip(s)'],
+                    ['Ctrl+A', 'Select all clips'],
+                    ['Esc', 'Cancel / Deselect'],
                   ].map(([key, desc]) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ padding: '3px 8px', backgroundColor: colors.card, borderRadius: 4, fontSize: 11, fontWeight: 600, minWidth: 70, textAlign: 'center', border: `1px solid ${colors.border}` }}>{key}</span>
@@ -1716,13 +1716,13 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
 
               {/* Navigation */}
               <div>
-                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.accent, fontWeight: 600 }}>🧭 Navegación</h4>
+                <h4 style={{ margin: '0 0 12px', fontSize: 14, color: colors.accent, fontWeight: 600 }}>🧭 Navigation</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {[
-                    ['[ ]', 'Clip anterior / siguiente'],
+                    ['[ ]', 'Previous / next clip'],
                     ['+ / -', 'Zoom in / out timeline'],
                     ['0', 'Reset zoom'],
-                    ['?', 'Mostrar esta ayuda'],
+                    ['?', 'Show this help'],
                   ].map(([key, desc]) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ padding: '3px 8px', backgroundColor: colors.card, borderRadius: 4, fontSize: 11, fontWeight: 600, minWidth: 70, textAlign: 'center', border: `1px solid ${colors.border}` }}>{key}</span>
@@ -1736,10 +1736,10 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               <div>
                 <h4 style={{ margin: '0 0 12px', fontSize: 14, color: '#22c55e', fontWeight: 600 }}>💡 Tips</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: colors.textSecondary }}>
-                  <p style={{ margin: 0 }}>• <strong>Doble-clic</strong> en un clip para editarlo</p>
-                  <p style={{ margin: 0 }}>• <strong>Arrastra</strong> clips para reordenar</p>
+                  <p style={{ margin: 0 }}>• <strong>Double-click</strong> a clip to edit it</p>
+                  <p style={{ margin: 0 }}>• <strong>Arrastra</strong> clips to reorder</p>
                   <p style={{ margin: 0 }}>• <strong>Hover</strong> en clips muestra botones</p>
-                  <p style={{ margin: 0 }}>• <strong>J/K/L</strong> es el estándar de edición profesional</p>
+                  <p style={{ margin: 0 }}>• <strong>J/K/L</strong> is the pro editing standard</p>
                 </div>
               </div>
             </div>
@@ -1759,7 +1759,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
                 cursor: 'pointer',
               }}
             >
-              Entendido
+              Got it
             </button>
           </div>
         </div>

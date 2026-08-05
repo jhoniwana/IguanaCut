@@ -3,6 +3,6 @@
     <string name="app_name">IguanaCut</string>
     <string name="notification_channel_name">IguanaCut server</string>
     <string name="notification_title">IguanaCut</string>
-    <string name="notification_text">Editor de video corriendo en segundo plano</string>
-    <string name="loading">Iniciando editor…</string>
+    <string name="notification_text">Video editor running in the background</string>
+    <string name="loading">Starting editor…</string>
 </resources>

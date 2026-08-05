@@ -233,7 +233,7 @@ export default function SourcePanel({
             }}
           >
             <FiLayers size={16} />
-            Agregar Todos a Timeline ({sources.length})
+            Add All to Timeline ({sources.length})
           </button>
         )}
       </div>
@@ -262,7 +262,7 @@ export default function SourcePanel({
           }}
         >
           <FiUpload size={16} />
-          {isUploading ? 'Subiendo...' : 'Subir'}
+          {isUploading ? 'Uploading...' : 'Upload'}
         </button>
 
         {onUrlDownload && (
@@ -292,7 +292,7 @@ export default function SourcePanel({
             type="text"
             value={urlValue}
             onChange={(e) => setUrlValue(e.target.value)}
-            placeholder="Pegar URL de video..."
+            placeholder="Paste video URL..."
             onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
             style={{
               flex: 1,
@@ -358,7 +358,7 @@ export default function SourcePanel({
           >
             <FiUpload size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
             <p style={{ margin: 0, fontSize: 13 }}>
-              Arrastra archivos aquí o haz clic en "Subir"
+              Drag files here or click "Upload"
             </p>
           </div>
         ) : (
@@ -457,7 +457,7 @@ export default function SourcePanel({
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
                       onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                      title="Agregar video completo a timeline"
+                      title="Add full video to timeline"
                     >
                       <MdPlaylistAdd size={16} />
                     </button>
@@ -501,7 +501,7 @@ export default function SourcePanel({
                 backgroundColor: dragOver ? `${colors.primary}10` : 'transparent',
               }}
             >
-              + Agregar más videos
+              + Add more videos
             </div>
           </div>
         )}

@@ -200,7 +200,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             } catch { proj = null; }
           }
           if (!proj) {
-            proj = await apiClient.createProject('Video Descargado', initialVideoId);
+            proj = await apiClient.createProject('Downloaded Video', initialVideoId);
           }
           setProject(proj);
           localStorage.setItem('losslesscut_last_project', proj.id);
@@ -386,9 +386,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
           setIsExporting(false);
           setExportStartTime(null);
           if (op.status === 'completed') {
-            showToast('¡Exportación completada!', 'success');
+            showToast('Export complete!', 'success');
           } else {
-            showToast('Error en la exportación', 'error');
+            showToast('Export error', 'error');
           }
         }
       } catch { clearInterval(poll); setIsExporting(false); setExportStartTime(null); }
@@ -832,7 +832,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
     // Need either crop or blur enabled
     const hasEffects = cropConfig.enabled || blurConfig.mode === 'auto';
     if (!hasEffects) {
-      showToast('Activa recorte o censura para generar preview', 'warning');
+      showToast('Enable crop or blur to generate the preview', 'warning');
       return;
     }
 
@@ -1012,14 +1012,14 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
     // Show toast with undo option
     if (segmentToDelete) {
       showToast(`"${segmentToDelete.name}" eliminado`, 'success', {
-        label: 'Deshacer',
+        label: 'Undo',
         onClick: () => {
           // Restore the segment at its original position
           const restored = [...updated];
           restored.splice(segmentIndex, 0, segmentToDelete);
           setSegments(restored);
           if (project) apiClient.updateProject(project.id, { ...project, segments: restored }).catch(console.error);
-          showToast('Clip restaurado', 'success');
+          showToast('Clip restored', 'success');
         }
       });
     }
@@ -1206,7 +1206,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               border: `1px solid ${colors.border}`,
               borderRadius: '50%',
               transition: 'all 0.2s ease',
-            }} title="Archivos">
+            }} title="Files">
               <FiFolder size={20} />
             </button>
           )}
@@ -1266,19 +1266,19 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
-              }}>Cómo usar</h2>
+              }}>How to use</h2>
             </div>
             <div style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '2' }}>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>1.</span> Sube un video</p>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>2.</span> Navega al punto de inicio</p>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>3.</span> Presiona <span style={{
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>1.</span> Upload a video</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>2.</span> Go to the start point</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>3.</span> Press <span style={{
                 background: colors.accent, color: '#000', padding: '2px 8px', borderRadius: '6px', fontWeight: '700'
-              }}>I</span> (Marcar inicio)</p>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>4.</span> Navega al punto final</p>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>5.</span> Presiona <span style={{
+              }}>I</span> (Set start)</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>4.</span> Go to the end point</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>5.</span> Press <span style={{
                 background: colors.secondary, color: '#fff', padding: '2px 8px', borderRadius: '6px', fontWeight: '700'
-              }}>O</span> (Marcar fin)</p>
-              <p><span style={{ color: colors.primary, fontWeight: '700' }}>6.</span> Toca <strong>Exportar</strong> para guardar</p>
+              }}>O</span> (Set end)</p>
+              <p><span style={{ color: colors.primary, fontWeight: '700' }}>6.</span> Tap <strong>Export</strong> to save</p>
             </div>
             <div style={{
               background: colors.surface,
@@ -1295,7 +1295,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               ...btnGradient(colors.gradient),
               marginTop: '20px',
             }}>
-              ¡Entendido!
+              Got it!
             </button>
           </div>
         </div>
@@ -1341,7 +1341,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 color: colors.text,
               }}>IguanaCut</h2>
               <p style={{ color: colors.textSecondary, margin: 0, fontSize: '15px' }}>
-                Edita, recorta y censura videos fácilmente
+                Edit, trim and blur videos easily
               </p>
             </div>
             <label style={{
@@ -1351,11 +1351,11 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               padding: '16px 32px',
               fontSize: '16px',
             }}>
-              <FiUpload size={22} /> Subir Video
+              <FiUpload size={22} /> Upload Video
               <input type="file" accept="video/*,audio/*" onChange={handleUpload} style={{ display: 'none' }} />
             </label>
             <p style={{ color: colors.textMuted, fontSize: '13px', marginTop: '-8px' }}>
-              MP4, MOV, MKV, WebM y más formatos
+              MP4, MOV, MKV, WebM and more
             </p>
           </div>
         ) : (
@@ -1489,7 +1489,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <FiImage size={18} color={watermarkConfig.enabled ? colors.accent : colors.textSecondary} />
-                          <span>Marca de Agua</span>
+                          <span>Watermark</span>
                         </div>
                         {watermarkConfig.enabled && (
                           <span style={{
@@ -1647,7 +1647,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     display: 'flex', alignItems: 'center', gap: '8px',
                   }}>
                     <FiEdit2 size={16} />
-                    Editando {segments.find(s => s.id === editingClipId)?.name} — I=Inicio, O=Fin, Esc=Cancelar
+                    Editando {segments.find(s => s.id === editingClipId)?.name} — I=Start, O=End, Esc=Cancel
                   </div>
                 )}
 
@@ -1675,7 +1675,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 8px',
                         marginTop: '2px',
                       }}>
-                        <span style={{ fontSize: '11px', opacity: 0.8 }}>Duración:</span>
+                        <span style={{ fontSize: '11px', opacity: 0.8 }}>Duration:</span>
                         <span style={{
                           fontSize: '16px', fontWeight: '700', fontFamily: 'monospace',
                           color: clipDuration >= 0.1 ? '#000' : '#666',
@@ -1684,7 +1684,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         </span>
                       </div>
                       <div style={{ fontSize: '10px', opacity: 0.7, textAlign: 'center' }}>
-                        Presiona O para crear clip
+                        Press O to create clip
                       </div>
                     </div>
                   );
@@ -1831,7 +1831,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     zIndex: 25,
                   }}>
                     <MdBlurOn size={16} />
-                    Censura Auto Activa
+                    Auto Face Blur Active
                   </div>
                 )}
 
@@ -1946,7 +1946,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         }}>
                           <FiScissors size={28} style={{ opacity: 0.5 }} />
                         </div>
-                        <p style={{ margin: '0 0 12px', fontSize: '14px', color: colors.text }}>Aún no hay clips</p>
+                        <p style={{ margin: '0 0 12px', fontSize: '14px', color: colors.text }}>No clips yet</p>
                         <div style={{
                           background: colors.card,
                           borderRadius: '10px',
@@ -1967,7 +1967,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                               fontSize: '12px',
                             }}>I</span>
                             <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
-                              Marca el <strong style={{ color: colors.accent }}>inicio</strong>
+                              Set the <strong style={{ color: colors.accent }}>start</strong>
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1984,7 +1984,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                               fontSize: '12px',
                             }}>O</span>
                             <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
-                              Marca el <strong style={{ color: colors.secondary }}>fin</strong> y crea el clip
+                              Set the <strong style={{ color: colors.secondary }}>fin</strong> y crea el clip
                             </span>
                           </div>
                         </div>
@@ -2042,7 +2042,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                     alignItems: 'center',
                                     opacity: 0.6,
                                   }}
-                                  title="Arrastra para reordenar"
+                                  title="Drag to reorder"
                                 >
                                   <IoMdReorder size={16} />
                                 </div>
@@ -2057,7 +2057,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                     transition: 'all 0.15s ease',
                                     boxShadow: seg.selected ? '0 0 0 3px rgba(16, 185, 129, 0.2)' : 'none',
                                   }}
-                                  title={seg.selected ? 'Deseleccionar' : 'Seleccionar para exportar'}
+                                  title={seg.selected ? 'Deseleccionar' : 'Select to export'}
                                 >
                                   {seg.selected && <IoMdCheckmark size={16} color="#fff" />}
                                 </div>
@@ -2091,7 +2091,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                       alignItems: 'center',
                                       gap: '2px',
                                     }}
-                                    title={(clipBlurZones[seg.id]?.enabled !== false) ? "Censura activa en este clip" : "Censura desactivada en este clip"}
+                                    title={(clipBlurZones[seg.id]?.enabled !== false) ? "Face blur active on this clip" : "Face blur off on this clip"}
                                   >
                                     <MdBlurOn size={14} />
                                   </button>
@@ -2110,7 +2110,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                     padding: '4px',
                                     borderRadius: '4px',
                                   }}
-                                  title={isEditing ? "Cancelar edición" : "Editar clip"}
+                                  title={isEditing ? "Cancel editing" : "Editar clip"}
                                 >
                                   <FiEdit2 size={14} />
                                 </button>
@@ -2144,7 +2144,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                   fontSize: '11px', color: colors.textSecondary,
                                   textAlign: 'center',
                                 }}>
-                                  Navega → <strong style={{ color: colors.accent }}>I</strong> nuevo inicio,
+                                  Navega → <strong style={{ color: colors.accent }}>I</strong> nuevo start,
                                   <strong style={{ color: colors.secondary }}> O</strong> nuevo fin
                                 </div>
                               )}
@@ -2225,7 +2225,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                                 fontSize: '10px',
                                 fontWeight: '600',
                               }}
-                              title="Archivos separados"
+                              title="Separate files"
                             >
                               ◇ {selectedCount}
                             </button>
@@ -2297,7 +2297,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         gap: '6px',
                       }}
                     >
-                      {isPreviewMode ? <><IoMdPause size={16} /> Detener Preview</> : <><IoMdPlay size={16} /> Ver Clips</>}
+                      {isPreviewMode ? <><IoMdPause size={16} /> Detener Preview</> : <><IoMdPlay size={16} /> View Clips</>}
                     </button>
 
                     {/* Export format selector */}
@@ -2346,7 +2346,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         }}
                       >
                         <span style={{ fontSize: '16px' }}>◇◇</span>
-                        <span>{selectedCount} Archivos</span>
+                        <span>{selectedCount} Files</span>
                       </button>
                     </div>
 
@@ -2399,7 +2399,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                           fontSize: '10px',
                           color: colors.textMuted,
                         }}>
-                          <span>Procesando video...</span>
+                          <span>Processing video...</span>
                           <span>
                             {Math.round(exportProgress)}% completado
                             {getExportETA() && ` • ~${getExportETA()} restante`}
@@ -2464,7 +2464,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                           }}
                         >
                           <span style={{ fontSize: '18px' }}>{exportSeparate ? '◇' : '◆'}</span>
-                          Exportar {exportSeparate ? `${selectedCount} Videos` : 'Combinado'}
+                          Export {exportSeparate ? `${selectedCount} Videos` : 'Combinado'}
                         </button>
                       </>
                     )}
@@ -2491,7 +2491,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         }}
                       >
                         <IoMdDownload size={16} />
-                        Descargar
+                        Download
                       </button>
                     )}
                   </div>
@@ -2628,7 +2628,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     transition: 'all 0.2s ease',
                     border: pendingCutStart !== null ? 'none' : `1px solid ${colors.border}`,
                   }}
-                  title="Marcar punto de inicio (tecla I)"
+                  title="Set start point (I key)"
                 >
                   <div style={{
                     display: 'flex',
@@ -2649,7 +2649,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                       color: pendingCutStart !== null ? '#000' : '#fff',
                     }}>I</span>
                     <span style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: '600' }}>
-                      {pendingCutStart !== null ? '✓ Listo' : 'Marcar IN'}
+                      {pendingCutStart !== null ? '✓ Ready' : 'Set IN'}
                     </span>
                   </div>
                 </button>
@@ -2680,7 +2680,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     cursor: pendingCutStart === null && !editingClipId ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s ease',
                   }}
-                  title="Marcar fin y crear clip (tecla O)"
+                  title="Set end & create clip (O key)"
                 >
                   <div style={{
                     display: 'flex',
@@ -2700,7 +2700,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                       justifyContent: 'center',
                     }}>O</span>
                     <span style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: '600' }}>
-                      {pendingCutStart !== null ? '+ Crear' : 'Marcar OUT'}
+                      {pendingCutStart !== null ? '+ Create' : 'Set OUT'}
                     </span>
                   </div>
                 </button>
@@ -2903,10 +2903,10 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
           }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>✂️</div>
             <h2 style={{ color: colors.text, margin: '0 0 12px', fontSize: '22px' }}>
-              ¡Bienvenido a LosslessCut!
+              Welcome to LosslessCut!
             </h2>
             <p style={{ color: colors.textSecondary, margin: '0 0 24px', lineHeight: '1.6' }}>
-              Crear clips es muy fácil:
+              Creating clips is easy:
             </p>
             <div style={{
               background: colors.card,
@@ -2928,7 +2928,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   fontWeight: '700',
                   fontSize: '16px',
                 }}>I</span>
-                <span style={{ color: colors.text }}>Marca el <strong>inicio</strong> del clip</span>
+                <span style={{ color: colors.text }}>Set the <strong>start</strong> del clip</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                 <span style={{
@@ -2943,7 +2943,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   fontWeight: '700',
                   fontSize: '16px',
                 }}>O</span>
-                <span style={{ color: colors.text }}>Marca el <strong>fin</strong> y crea el clip</span>
+                <span style={{ color: colors.text }}>Set the <strong>fin</strong> y crea el clip</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span style={{
@@ -2958,7 +2958,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   fontWeight: '700',
                   fontSize: '10px',
                 }}>←→</span>
-                <span style={{ color: colors.text }}>Navega por el video</span>
+                <span style={{ color: colors.text }}>Navigate the video</span>
               </div>
             </div>
             <button
@@ -2978,7 +2978,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 width: '100%',
               }}
             >
-              ¡Entendido!
+              Got it!
             </button>
           </div>
         </div>
@@ -3026,12 +3026,12 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 </div>
                 <div>
                   <div style={{ color: colors.text, fontWeight: '600', fontSize: '16px' }}>
-                    Vista Previa con Efectos
+                    Preview with Effects
                   </div>
                   <div style={{ color: colors.textMuted, fontSize: '12px' }}>
                     {cropConfig.enabled && `Crop: ${cropConfig.preset?.toUpperCase() || 'Custom'}`}
                     {cropConfig.enabled && blurConfig.mode === 'auto' && ' + '}
-                    {blurConfig.mode === 'auto' && `Censura activa`}
+                    {blurConfig.mode === 'auto' && `Face blur active`}
                   </div>
                 </div>
               </div>
@@ -3092,7 +3092,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               }}>
                 <span style={{ fontSize: '18px' }}>💡</span>
                 <span>
-                  Este es un preview de 5 segundos. El video exportado incluirá todos los clips seleccionados con los efectos aplicados.
+                  This is a 5-second preview. The exported video will include all selected clips with the effects applied.
                 </span>
               </div>
             </div>
@@ -3116,7 +3116,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   cursor: 'pointer',
                 }}
               >
-                Cerrar
+                Close
               </button>
               <button
                 onClick={() => {
@@ -3142,7 +3142,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 }}
               >
                 <IoMdDownload size={16} />
-                Exportar Video Completo
+                Export Full Video
               </button>
             </div>
           </div>

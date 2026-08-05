@@ -58,7 +58,7 @@ export default function WatermarkSettings({
 
     // Validate PNG
     if (!file.type.includes('png')) {
-      alert('Solo se permiten archivos PNG para marcas de agua');
+      alert('Only PNG files are allowed for watermarks');
       return;
     }
 
@@ -73,7 +73,7 @@ export default function WatermarkSettings({
       });
     } catch (error) {
       console.error('Failed to upload watermark:', error);
-      alert('Error al subir la marca de agua');
+      alert('Error uploading the watermark');
     } finally {
       setIsUploading(false);
     }
@@ -145,7 +145,7 @@ export default function WatermarkSettings({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <FiImage size={20} color={colors.primary} />
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: colors.text }}>
-                Marca de Agua
+                Watermark
               </h3>
             </div>
             <button
@@ -174,7 +174,7 @@ export default function WatermarkSettings({
               marginBottom: 16,
             }}
           >
-            <span style={{ color: colors.text, fontSize: 14 }}>Activar marca de agua</span>
+            <span style={{ color: colors.text, fontSize: 14 }}>Enable watermark</span>
             <label
               style={{
                 position: 'relative',
@@ -235,10 +235,10 @@ export default function WatermarkSettings({
             >
               <FiUpload size={32} color={colors.textMuted} style={{ marginBottom: 8 }} />
               <p style={{ margin: 0, color: colors.textSecondary, fontSize: 13 }}>
-                {isUploading ? 'Subiendo...' : 'Click para subir imagen PNG'}
+                {isUploading ? 'Uploading...' : 'Click to upload PNG image'}
               </p>
               <p style={{ margin: '4px 0 0', color: colors.textMuted, fontSize: 11 }}>
-                Recomendado: PNG con transparencia
+                Recommended: transparent PNG
               </p>
             </div>
           ) : (
@@ -275,7 +275,7 @@ export default function WatermarkSettings({
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {config.filename || 'Marca de agua'}
+                  {config.filename || 'Watermark'}
                 </p>
                 <p style={{ margin: '4px 0 0', color: colors.textMuted, fontSize: 11 }}>
                   Imagen cargada
@@ -290,7 +290,7 @@ export default function WatermarkSettings({
                   cursor: 'pointer',
                   padding: 8,
                 }}
-                title="Eliminar marca de agua"
+                title="Remove watermark"
               >
                 <FiTrash2 size={18} />
               </button>
@@ -340,7 +340,7 @@ export default function WatermarkSettings({
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <label style={{ color: colors.textSecondary, fontSize: 12 }}>
-                    Opacidad
+                    Opacity
                   </label>
                   <span style={{ color: colors.text, fontSize: 12 }}>
                     {Math.round(config.opacity * 100)}%

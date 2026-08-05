@@ -18,8 +18,8 @@ ARCH="arm64-v8a"
 NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 if [ ! -d "$TOOLCHAIN" ]; then
-    echo "ERROR: no se encontro el NDK en $NDK" >&2
-    echo "Ejecuta: scripts/android/setup-android-sdk.sh" >&2
+    echo "ERROR: NDK not found at $NDK" >&2
+    echo "Run: scripts/android/setup-android-sdk.sh" >&2
     exit 1
 fi
 
@@ -31,8 +31,15 @@ OUT="$SCRIPT_DIR/ffmpeg-dist/$ARCH"
 WORK="$SCRIPT_DIR/.ffmpeg-build"
 mkdir -p "$WORK" "$OUT/bin"
 
+# Si ya hay binarios compilados, no reconstruir (la recompilacion incremental
+# sobre un arbol sucio falla en el link de ffmpeg_g). Forzar con REBUILD_FFMPEG=1.
+if [ -f "$OUT/bin/ffmpeg" ] && [ -f "$OUT/bin/ffprobe" ] && [ -z "${REBUILD_FFMPEG:-}" ]; then
+    echo "== FFmpeg already built ($OUT/bin); SKIP (REBUILD_FFMPEG=1 to rebuild) =="
+    exit 0
+fi
+
 if [ ! -f "$WORK/ffmpeg/configure" ]; then
-    echo "== Descargando FFmpeg $FFMPEG_VERSION =="
+    echo "== Downloading FFmpeg $FFMPEG_VERSION =="
     git clone --depth 1 --branch "$FFMPEG_VERSION" \
         https://git.ffmpeg.org/ffmpeg.git "$WORK/ffmpeg"
 fi
@@ -40,11 +47,11 @@ fi
 # x264: encoder de video para el re-encode (cortes precisos, crop, watermark).
 # NOTA: --enable-gpl hace que el binario resultante sea GPL.
 if [ ! -f "$WORK/x264/configure" ]; then
-    echo "== Descargando x264 =="
+    echo "== Downloading x264 =="
     git clone --depth 1 https://code.videolan.org/videolan/x264.git "$WORK/x264"
 fi
 if [ ! -f "$OUT/x264/lib/libx264.a" ]; then
-    echo "== Compilando x264 para $ARCH =="
+    echo "== Building x264 for $ARCH =="
     # El NDK solo trae llvm-*: x264 busca <prefix>ar/nm/ranlib/strings/strip
     for t in ar nm ranlib strings strip; do
         ln -sf "llvm-$t" "${CROSS_PREFIX}$t"
@@ -61,7 +68,7 @@ fi
 
 cd "$WORK/ffmpeg"
 
-echo "== Configurando FFmpeg para $ARCH =="
+echo "== Configuring FFmpeg for $ARCH =="
 export PKG_CONFIG_PATH="$OUT/x264/lib/pkgconfig"
 ./configure \
     --prefix="$OUT" \
@@ -93,10 +100,10 @@ export PKG_CONFIG_PATH="$OUT/x264/lib/pkgconfig"
     --enable-pthreads \
     --pkg-config=pkg-config
 
-echo "== Compilando (puede tardar varios minutos) =="
+echo "== Building (may take several minutes) =="
 make -j"$(nproc)"
 make install
 
 echo ""
-echo "Listo. Binarios en:"
+echo "Done. Binaries at:"
 ls -lh "$OUT/bin/"

@@ -39,11 +39,11 @@ interface CropPreset {
 
 const PRESETS: CropPreset[] = [
   { id: 'tiktok', name: '9:16', aspectRatio: 9 / 16, description: 'TikTok, Reels, Shorts', icon: '◆', color: '#FF148A' },
-  { id: 'portrait43', name: '3:4', aspectRatio: 3 / 4, description: 'Retrato vertical', icon: '◇', color: '#AA66FF' },
+  { id: 'portrait43', name: '3:4', aspectRatio: 3 / 4, description: 'Vertical portrait', icon: '◇', color: '#AA66FF' },
   { id: 'instagram', name: '1:1', aspectRatio: 1, description: 'Instagram cuadrado', icon: '◈', color: '#00E5FF' },
   { id: 'youtube', name: '16:9', aspectRatio: 16 / 9, description: 'YouTube, TV', icon: '◆', color: '#FF4466' },
-  { id: 'cinema', name: '21:9', aspectRatio: 21 / 9, description: 'Cinematográfico', icon: '◇', color: '#FFC800' },
-  { id: 'free', name: 'Libre', aspectRatio: null, description: 'Tamaño personalizado', icon: '✦', color: colors.textMuted },
+  { id: 'cinema', name: '21:9', aspectRatio: 21 / 9, description: 'Cinematic', icon: '◇', color: '#FFC800' },
+  { id: 'free', name: 'Libre', aspectRatio: null, description: 'Custom size', icon: '✦', color: colors.textMuted },
 ];
 
 interface Props {
@@ -268,7 +268,7 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
               Recortar Video
             </div>
             <div style={{ color: colors.textMuted, fontSize: '11px' }}>
-              Cambia el formato de tu video
+              Change your video format
             </div>
           </div>
         </div>
@@ -372,14 +372,14 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
             }}>
               <FiMove size={16} color={colors.primary} />
               <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
-                Ajustar posición
+                Adjust position
               </span>
               <span style={{
                 color: colors.textMuted,
                 fontSize: '11px',
                 marginLeft: 'auto',
               }}>
-                o arrastra en el video
+                or drag on the video
               </span>
             </div>
 
@@ -459,7 +459,7 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
             }}>
               <FiZoomIn size={16} color={colors.accent} />
               <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
-                Tamaño del recorte
+                Crop size
               </span>
               <span style={{
                 color: colors.accent,
@@ -496,8 +496,8 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
               fontSize: '10px',
               color: colors.textMuted,
             }}>
-              <span>🔍 Más zoom</span>
-              <span>Tamaño completo</span>
+              <span>🔍 More zoom</span>
+              <span>Full size</span>
             </div>
           </div>
 
@@ -517,7 +517,7 @@ export default function CropSelector({ config, onChange, videoWidth, videoHeight
             </div>
             <div style={{ color: colors.textMuted }}>→</div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ color: colors.textMuted, fontSize: '10px', marginBottom: '2px' }}>Salida</div>
+              <div style={{ color: colors.textMuted, fontSize: '10px', marginBottom: '2px' }}>Output</div>
               <div style={{ color: colors.primary, fontSize: '12px', fontFamily: 'monospace', fontWeight: '600' }}>{localWidth}×{localHeight}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
