@@ -1,5 +1,9 @@
 # IguanaCut 🦎
 
+<p align="center">
+  <img src="logo.svg" alt="IguanaCut" width="140" />
+</p>
+
 Editor de video sin pérdida de calidad para **Android**, con servidor Go + FFmpeg embebidos en el APK (todo en uno, funciona offline).
 
 Fork de [LosslessCut Web Edition](https://github.com/jhoniwana/losslesscut-web), a su vez basado en [LosslessCut](https://github.com/mifi/losslesscut) (GPL-2.0).

@@ -16,13 +16,13 @@ import {
   IoMdCreate,
   IoMdCloudDownload
 } from 'react-icons/io';
-import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload, FiGithub } from 'react-icons/fi';
+import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload, FiGithub, FiShare2 } from 'react-icons/fi';
 import { MdBlurOn } from 'react-icons/md';
 import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import VideoEditor from './components/VideoEditor';
 import MultiSourceEditor from './components/MultiSourceEditor';
 import { useIsMobile } from './hooks/useIsMobile';
-import { apiClient } from './api/client';
+import { apiClient, OutputFile } from './api/client';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
@@ -81,12 +81,15 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+  const [outputs, setOutputs] = useState<OutputFile[]>([]);
+  const [isLoadingOutputs, setIsLoadingOutputs] = useState(false);
+  const [deletingOutput, setDeletingOutput] = useState<string | null>(null);
   const isMobile = useIsMobile();
   const sessionIdRef = useRef<string>(generateSessionId());
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
 
   // YouTube/URL Download states
-  const [fileManagerTab, setFileManagerTab] = useState<'files' | 'download'>('files');
+  const [fileManagerTab, setFileManagerTab] = useState<'files' | 'download' | 'outputs'>('files');
   const [downloadUrl, setDownloadUrl] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -181,6 +184,49 @@ export default function App() {
     }
   };
 
+  // --- Archivos exportados (cortes) ---
+  const loadOutputs = async () => {
+    setIsLoadingOutputs(true);
+    try {
+      setOutputs(await apiClient.listOutputs());
+    } catch (error) {
+      console.error('Failed to load outputs:', error);
+    } finally {
+      setIsLoadingOutputs(false);
+    }
+  };
+
+  const deleteOutput = async (file_name: string) => {
+    if (!confirm(`¿Eliminar "${file_name}"?`)) return;
+    setDeletingOutput(file_name);
+    try {
+      await apiClient.deleteOutput(file_name);
+      setOutputs(outputs.filter(o => o.file_name !== file_name));
+    } catch (error) {
+      console.error('Failed to delete output:', error);
+    } finally {
+      setDeletingOutput(null);
+    }
+  };
+
+  const downloadOutput = (file_name: string) => {
+    const a = document.createElement('a');
+    a.href = apiClient.getOutputUrl(file_name);
+    a.download = file_name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const shareOutput = (file_name: string) => {
+    const bridge = (window as any).AndroidBridge;
+    if (bridge?.shareFile) {
+      bridge.shareFile(file_name);
+    } else {
+      downloadOutput(file_name);
+    }
+  };
+
   const startRename = (id: string, currentName: string) => {
     setRenamingVideoId(id);
     setRenameValue(currentName);
@@ -221,6 +267,7 @@ export default function App() {
       // en el home con la gestion de archivos.
       if (IS_ANDROID) {
         loadVideos();
+        loadOutputs();
         return;
       }
       // Try saved video ID first
@@ -764,6 +811,168 @@ export default function App() {
   );
 
 
+  // Lista de archivos exportados (cortes): se muestra en el home Android y
+  // en la pestana "Exportados" del modal de archivos (desktop).
+  const renderOutputList = () => (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+        <button
+          onClick={loadOutputs}
+          disabled={isLoadingOutputs}
+          style={{
+            background: colors.card,
+            border: `1px solid ${colors.border}`,
+            color: colors.textSecondary,
+            padding: '8px 14px',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          <IoMdRefresh size={16} style={{ animation: isLoadingOutputs ? 'spin 1s linear infinite' : 'none' }} />
+          Actualizar
+        </button>
+      </div>
+      {isLoadingOutputs ? (
+        <div style={{ textAlign: 'center', padding: '40px', color: colors.textMuted }}>
+          <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
+          <p>Cargando exportaciones...</p>
+        </div>
+      ) : outputs.length === 0 ? (
+        <div style={{
+          textAlign: 'center',
+          padding: '40px 20px',
+          background: colors.card,
+          borderRadius: '14px',
+          border: `1px solid ${colors.border}`,
+        }}>
+          <div style={{ fontSize: '34px', marginBottom: '12px' }}>📤</div>
+          <h3 style={{ color: colors.text, margin: '0 0 8px', fontSize: '16px' }}>
+            No hay exportaciones
+          </h3>
+          <p style={{ color: colors.textMuted, margin: 0, fontSize: '13px' }}>
+            Tus cortes exportados van a aparecer acá
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {outputs.map((output) => (
+            <div
+              key={output.file_name}
+              style={{
+                background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '14px',
+                padding: '14px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+              }}
+            >
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                flexShrink: 0,
+                background: colors.gradientAccent + '22',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '18px',
+              }}>
+                🎬
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  color: colors.text,
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {output.file_name}
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: '10px',
+                  color: colors.textMuted,
+                  fontSize: '11px',
+                  marginTop: '2px',
+                }}>
+                  <span>💾 {formatFileSize(output.size)}</span>
+                  <span>🕒 {output.created_at ? new Date(output.created_at).toLocaleDateString() : ''}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button
+                  onClick={() => shareOutput(output.file_name)}
+                  title="Compartir"
+                  style={{
+                    background: colors.card,
+                    border: `1px solid ${colors.border}`,
+                    color: colors.primary,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FiShare2 size={17} />
+                </button>
+                <button
+                  onClick={() => downloadOutput(output.file_name)}
+                  title="Descargar"
+                  style={{
+                    background: colors.card,
+                    border: `1px solid ${colors.border}`,
+                    color: colors.text,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IoMdDownload size={17} />
+                </button>
+                <button
+                  onClick={() => deleteOutput(output.file_name)}
+                  disabled={deletingOutput === output.file_name}
+                  title="Eliminar"
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid ${colors.danger}`,
+                    color: colors.danger,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: deletingOutput === output.file_name ? 0.5 : 1,
+                  }}
+                >
+                  <FiTrash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+
   return (
     <div style={{
       background: `radial-gradient(ellipse at 50% 0%, ${colors.surface} 0%, ${colors.bg} 70%)`,
@@ -923,6 +1132,36 @@ export default function App() {
             Subir Video
           </motion.button>
 
+          {!HIDE_URL_DOWNLOAD && (
+          <motion.button
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(209, 245, 102, 0.4)' }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setFileManagerTab('download');
+              setShowFileManager(true);
+            }}
+            style={{
+              background: colors.accent,
+              color: '#000',
+              padding: isMobile ? '16px 24px' : '20px 32px',
+              borderRadius: '9999px',
+              fontSize: isMobile ? '16px' : '17px',
+              fontWeight: '700',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              boxShadow: '0 6px 25px rgba(209, 245, 102, 0.3)',
+              transition: 'box-shadow 0.2s ease',
+            }}
+          >
+            <FiLink size={22} />
+            Descargar desde URL
+          </motion.button>
+          )}
+
           <motion.button
             whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(12, 182, 145, 0.4)' }}
             whileTap={{ scale: 0.98 }}
@@ -1053,6 +1292,36 @@ export default function App() {
               Subir Video
             </motion.button>
 
+            {!HIDE_URL_DOWNLOAD && (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                setFileManagerTab('download');
+                setShowFileManager(true);
+              }}
+              style={{
+                width: '100%',
+                background: colors.accent,
+                color: '#000',
+                padding: '14px 24px',
+                borderRadius: '9999px',
+                fontSize: '15px',
+                fontWeight: '700',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: '0 6px 25px rgba(209, 245, 102, 0.3)',
+                marginBottom: '22px',
+              }}
+            >
+              <FiLink size={20} />
+              Descargar desde URL
+            </motion.button>
+            )}
+
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -1068,6 +1337,24 @@ export default function App() {
               </span>
             </div>
             {renderVideoList()}
+
+            {/* Exportaciones (cortes) */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '28px',
+              marginBottom: '12px',
+            }}>
+              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: colors.text }}>
+                <span style={{ color: colors.secondary, marginRight: '8px' }}>◆</span>
+                Mis Exportaciones
+              </h2>
+              <span style={{ color: colors.textMuted, fontSize: '13px' }}>
+                {outputs.length} {outputs.length === 1 ? 'corte' : 'cortes'}
+              </span>
+            </div>
+            {renderOutputList()}
           </div>
         )}
 
@@ -1170,11 +1457,11 @@ export default function App() {
             IguanaCut
           </div>
           <div style={{ color: colors.textMuted, fontSize: '12px', marginBottom: '14px' }}>
-            Creado por <span style={{ color: colors.secondary, fontWeight: '600' }}>Jhon Escorcia</span>
+            Creado por <span style={{ color: colors.secondary, fontWeight: '600' }}>jhoniwana</span>
             {' '}· v1.0.0
           </div>
           <a
-            href="https://github.com/jhoniwana/losslesscut-web"
+            href="https://github.com/jhoniwana/IguanaCut"
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -1193,7 +1480,7 @@ export default function App() {
             }}
           >
             <FiGithub size={18} color={colors.primary} />
-            github.com/jhoniwana/losslesscut-web
+            github.com/jhoniwana/IguanaCut
           </a>
           <div style={{
             marginTop: '14px',
@@ -1355,6 +1642,28 @@ export default function App() {
                     Descargar URL
                   </button>
                   )}
+                  <button
+                    onClick={() => setFileManagerTab('outputs')}
+                    style={{
+                      flex: 1,
+                      background: fileManagerTab === 'outputs' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: fileManagerTab === 'outputs' ? '700' : '500',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <IoMdDownload size={16} />
+                    Exportados ({outputs.length})
+                  </button>
                 </div>
               </div>
 
@@ -1539,6 +1848,9 @@ export default function App() {
 
                 {/* Files Tab */}
                 {fileManagerTab === 'files' && renderVideoList()}
+
+                {/* Outputs Tab */}
+                {fileManagerTab === 'outputs' && renderOutputList()}
               </div>
             </div>
           </motion.div>

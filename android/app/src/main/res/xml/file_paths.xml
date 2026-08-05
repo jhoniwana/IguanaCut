@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Archivos exportados por el server Go interno (filesDir/storage/outputs) -->
+    <files-path name="outputs" path="storage/outputs/" />
+</paths>

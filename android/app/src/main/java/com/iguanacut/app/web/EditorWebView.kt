@@ -8,6 +8,8 @@ import android.net.Uri
 import android.app.DownloadManager
 import android.os.Environment
 import android.util.Log
+import androidx.core.content.FileProvider
+import java.io.File
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
@@ -44,6 +46,26 @@ class AndroidBridge(private val context: Context) {
             .put("platform", "android")
             .put("version", android.os.Build.VERSION.RELEASE)
             .toString()
+    }
+
+    @JavascriptInterface
+    fun shareFile(fileName: String): String {
+        return try {
+            val output = File(context.filesDir, "storage/outputs/$fileName")
+            if (!output.exists()) return "{\"ok\": false, \"error\": \"not found\"}"
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", output)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "video/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "Compartir")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+            "{\"ok\": true}"
+        } catch (e: Exception) {
+            "{\"ok\": false, \"error\": \"${e.message}\"}"
+        }
     }
 }
 

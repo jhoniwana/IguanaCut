@@ -70,6 +70,12 @@ export interface Download {
   updated_at: string;
 }
 
+export interface OutputFile {
+  file_name: string;
+  size: number;
+  created_at: string;
+}
+
 export interface Operation {
   id: string;
   type: string;
@@ -443,6 +449,28 @@ class ApiClient {
 
   getWatermarkUrl(filename: string): string {
     return `/api/watermarks/${filename}`;
+  }
+
+  // --- Archivos exportados (cortes) ---
+  async listOutputs(): Promise<OutputFile[]> {
+    const response = await fetch('/api/outputs', {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to list outputs');
+    const data = await response.json();
+    return data.outputs || [];
+  }
+
+  async deleteOutput(filename: string): Promise<void> {
+    const response = await fetch(`/api/outputs/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete output');
+  }
+
+  getOutputUrl(filename: string): string {
+    return `/api/outputs/${encodeURIComponent(filename)}`;
   }
 
   // Get current session ID (for display or debugging)
