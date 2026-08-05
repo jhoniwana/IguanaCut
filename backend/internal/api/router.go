@@ -196,6 +196,17 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 		webDir = "./web"
 	}
 	router.Static("/assets", filepath.Join(webDir, "assets"))
+	// Estaticos de la raiz (logo.svg, favicon, ...) con content-type correcto.
+	// (Un Static("/") catch-all choca con /assets en gin: StaticFile por
+	// archivo + el NoRoute de abajo como SPA fallback.)
+	if entries, err := os.ReadDir(webDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || e.Name() == "index.html" {
+				continue
+			}
+			router.StaticFile("/"+e.Name(), filepath.Join(webDir, e.Name()))
+		}
+	}
 	router.StaticFile("/", filepath.Join(webDir, "index.html"))
 	router.StaticFile("/index.html", filepath.Join(webDir, "index.html"))
 
