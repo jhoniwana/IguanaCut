@@ -1172,7 +1172,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <img
-            src="/app-logo.png"
+            src="/logo.svg"
             alt="IguanaCut"
             style={{
               height: isMobile ? '26px' : '44px',

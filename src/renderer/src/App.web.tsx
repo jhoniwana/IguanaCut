@@ -787,11 +787,11 @@ export default function App() {
       }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {/* Logo oficial (frasco verde, fondo transparente) */}
+            {/* Logo oficial (iguana, SVG) */}
             <img
-              src="/app-logo.png"
+              src="/logo.svg"
               alt="IguanaCut"
-              style={{ height: '38px', width: 'auto', filter: 'drop-shadow(0 0 12px rgba(12, 182, 145, 0.4))' }}
+              style={{ height: '34px', width: 'auto', filter: 'drop-shadow(0 0 12px rgba(12, 182, 145, 0.4))' }}
             />
             <div>
               <h1 style={{
@@ -864,9 +864,9 @@ export default function App() {
             boxShadow: `0 8px 40px rgba(12, 182, 145, 0.2)`,
           }}>
             <img
-              src="/app-logo.png"
+              src="/logo.svg"
               alt="IguanaCut"
-              style={{ height: '56px', width: 'auto', filter: 'drop-shadow(0 0 16px rgba(209, 245, 102, 0.35))' }}
+              style={{ height: '64px', width: 'auto', filter: 'drop-shadow(0 0 16px rgba(209, 245, 102, 0.35))' }}
             />
           </div>
           <h2 style={{
@@ -1016,6 +1016,18 @@ export default function App() {
         {/* Gestion de archivos: home principal en Android */}
         {IS_ANDROID && (
           <div style={{ width: '100%', maxWidth: '500px' }}>
+            {/* Logo oficial */}
+            <div style={{ textAlign: 'center', marginBottom: '22px' }}>
+              <img
+                src="/logo.svg"
+                alt="IguanaCut"
+                style={{
+                  height: '110px',
+                  width: 'auto',
+                  filter: 'drop-shadow(0 0 22px rgba(12, 182, 145, 0.45))',
+                }}
+              />
+            </div>
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowEditor(true)}
@@ -1150,9 +1162,9 @@ export default function App() {
           textAlign: 'center',
         }}>
           <img
-            src="/app-logo.png"
+            src="/logo.svg"
             alt="IguanaCut"
-            style={{ height: '36px', width: 'auto', marginBottom: '10px', filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))' }}
+            style={{ height: '32px', width: 'auto', marginBottom: '10px', filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))' }}
           />
           <div style={{ color: colors.text, fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
             IguanaCut
