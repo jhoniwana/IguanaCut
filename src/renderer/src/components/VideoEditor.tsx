@@ -1140,8 +1140,8 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
     color: colors.text,
     border: `1px solid ${colors.border}`,
     borderRadius: '14px',
-    width: isMobile ? '44px' : '48px',
-    height: isMobile ? '44px' : '48px',
+    width: isMobile ? '38px' : '48px',
+    height: isMobile ? '38px' : '48px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -1163,7 +1163,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
       {/* Header */}
       <header style={{
         background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
-        padding: isMobile ? '12px 16px' : '16px 24px',
+        padding: isMobile ? '8px 12px' : '16px 24px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -1175,7 +1175,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             src="/app-logo.png"
             alt="Video Studio"
             style={{
-              height: isMobile ? '36px' : '44px',
+              height: isMobile ? '26px' : '44px',
               width: 'auto',
               flexShrink: 0,
               filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))',
@@ -1184,7 +1184,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
           <div>
             <h1 style={{
               margin: 0,
-              fontSize: isMobile ? '14px' : '16px',
+              fontSize: isMobile ? '13px' : '16px',
               fontWeight: '600',
               color: colors.textSecondary,
               letterSpacing: '0.5px',
@@ -1364,10 +1364,25 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             <div style={{
               flex: 1, display: 'flex', position: 'relative', minHeight: '200px',
             }}>
+              {/* Backdrop: en movil los sidebars flotan sobre el video como
+                  drawer; tocar afuera los cierra (en desktop no hay backdrop) */}
+              {isMobile && (leftSidebarOpen || sidebarOpen) && (
+                <div
+                  onClick={() => { setLeftSidebarOpen(false); setSidebarOpen(false); }}
+                  style={{
+                    position: 'absolute', inset: 0,
+                    background: 'rgba(0, 0, 0, 0.55)',
+                    zIndex: 15,
+                    transition: 'opacity 0.3s ease',
+                  }}
+                />
+              )}
               {/* LEFT SIDEBAR - Tools */}
               <div style={{
                 position: 'absolute', top: 0, left: 0, bottom: 0,
-                width: leftSidebarOpen ? (isMobile ? '280px' : '320px') : '50px',
+                // En movil: drawer flotante sobre el video (nunca mas ancho
+                // que la pantalla) y oculto por completo al cerrar.
+                width: leftSidebarOpen ? (isMobile ? 'min(86vw, 300px)' : '320px') : (isMobile ? '0px' : '50px'),
                 background: leftSidebarOpen
                   ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
                   : 'rgba(18, 18, 26, 0.9)',
@@ -1380,7 +1395,12 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               }}>
                 {/* Left Sidebar Toggle */}
                 <button
-                  onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                  onClick={() => {
+                    setLeftSidebarOpen(!leftSidebarOpen);
+                    // En movil los sidebars se excluyen entre si (evita que
+                    // se superpongan y tapen el video).
+                    if (isMobile && !leftSidebarOpen) setSidebarOpen(false);
+                  }}
                   style={{
                     background: colors.gradientAccent,
                     border: 'none',
@@ -1561,8 +1581,10 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 justifyContent: 'center',
                 position: 'relative',
                 overflow: 'hidden',
-                marginLeft: leftSidebarOpen ? (isMobile ? '280px' : '320px') : '50px',
-                marginRight: sidebarOpen ? (isMobile ? '300px' : '360px') : '50px',
+                // En movil el video usa todo el ancho; los sidebars flotan
+                // encima (overlay). En desktop los margenes empujan el video.
+                marginLeft: isMobile ? 0 : (leftSidebarOpen ? '320px' : '50px'),
+                marginRight: isMobile ? 0 : (sidebarOpen ? '360px' : '50px'),
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}>
                 <video
@@ -1618,7 +1640,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 {/* Edit mode indicator */}
                 {editingClipId && (
                   <div style={{
-                    position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
+                    position: 'absolute', top: '12px', right: isMobile ? '12px' : (sidebarOpen ? '320px' : '60px'),
                     background: colors.accent, borderRadius: '8px', padding: '8px 12px',
                     color: '#000', fontSize: '13px', fontWeight: '600',
                     transition: 'right 0.3s ease',
@@ -1637,7 +1659,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   const ms = Math.floor((clipDuration % 1) * 10);
                   return (
                     <div style={{
-                      position: 'absolute', top: '12px', right: sidebarOpen ? '320px' : '60px',
+                      position: 'absolute', top: '12px', right: isMobile ? '12px' : (sidebarOpen ? '320px' : '60px'),
                       background: colors.accent, borderRadius: '8px', padding: '10px 14px',
                       color: '#000', fontSize: '13px', fontWeight: '600',
                       transition: 'right 0.3s ease',
@@ -1854,7 +1876,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                {/* Clips Sidebar */}
               <div style={{
                 position: 'absolute', top: 0, right: 0, bottom: 0,
-                width: sidebarOpen ? (isMobile ? '300px' : '360px') : '50px',
+                width: sidebarOpen ? (isMobile ? 'min(86vw, 300px)' : '360px') : (isMobile ? '0px' : '50px'),
                 background: sidebarOpen
                   ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
                   : 'rgba(18, 18, 26, 0.9)',
@@ -1867,7 +1889,10 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               }}>
                 {/* Sidebar Toggle - Gradient Header */}
                 <button
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  onClick={() => {
+                    setSidebarOpen(!sidebarOpen);
+                    if (isMobile && !sidebarOpen) setLeftSidebarOpen(false);
+                  }}
                   style={{
                     background: colors.gradient,
                     border: 'none',
@@ -2475,13 +2500,13 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             </div>
 
             {/* Timeline */}
-            <div style={{ background: colors.surface, padding: isMobile ? '12px' : '16px' }}>
+            <div style={{ background: colors.surface, padding: isMobile ? '8px 10px' : '16px' }}>
               <div
                 ref={timelineRef}
                 onMouseDown={startTimeline}
                 onTouchStart={startTimeline}
                 style={{
-                  position: 'relative', height: isMobile ? '48px' : '56px',
+                  position: 'relative', height: isMobile ? '40px' : '56px',
                   background: colors.card, borderRadius: '12px', 
                   cursor: isDraggingTimeline ? 'grabbing' : 'grab',
                   overflow: 'hidden', touchAction: 'none',
@@ -2547,9 +2572,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             </div>
 
             {/* Controls */}
-            <div style={{ background: colors.surface, padding: isMobile ? '12px' : '16px', borderTop: `1px solid ${colors.border}` }}>
+            <div style={{ background: colors.surface, padding: isMobile ? '8px 10px' : '16px', borderTop: `1px solid ${colors.border}` }}>
               {/* Playback + Cut controls in one row */}
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 {/* Back 10s */}
                 <button onClick={() => {
                   if (videoRef.current) {
@@ -2562,7 +2587,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 {/* Play/Pause */}
                 <button
                   onClick={() => videoRef.current && (videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause())}
-                  style={{ ...iconBtn, background: colors.primary, border: 'none', width: isMobile ? '52px' : '56px', height: isMobile ? '52px' : '56px' }}
+                  style={{ ...iconBtn, background: colors.primary, border: 'none', width: isMobile ? '46px' : '56px', height: isMobile ? '46px' : '56px' }}
                   title="Play/Pause"
                 >
                   {isPlaying ? <IoMdPause size={26} /> : <IoMdPlay size={26} style={{ marginLeft: '2px' }} />}
@@ -2586,9 +2611,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   style={{
                     ...iconBtn,
                     width: 'auto',
-                    minWidth: isMobile ? '85px' : '115px',
-                    height: isMobile ? '50px' : '56px',
-                    padding: '0 18px',
+                    minWidth: isMobile ? '68px' : '115px',
+                    height: isMobile ? '42px' : '56px',
+                    padding: isMobile ? '0 10px' : '0 18px',
                     borderRadius: '16px',
                     background: pendingCutStart !== null
                       ? `linear-gradient(135deg, ${colors.accent} 0%, #FF9500 100%)`
@@ -2613,17 +2638,17 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   }}>
                     <span style={{
                       fontWeight: '800',
-                      fontSize: '20px',
+                      fontSize: isMobile ? '15px' : '20px',
                       background: pendingCutStart !== null ? 'rgba(0,0,0,0.15)' : colors.gradient,
-                      width: '30px',
-                      height: '30px',
+                      width: isMobile ? '22px' : '30px',
+                      height: isMobile ? '22px' : '30px',
                       borderRadius: '8px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: pendingCutStart !== null ? '#000' : '#fff',
                     }}>I</span>
-                    <span style={{ fontSize: '10px', fontWeight: '600' }}>
+                    <span style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: '600' }}>
                       {pendingCutStart !== null ? '✓ Listo' : 'Marcar IN'}
                     </span>
                   </div>
@@ -2636,9 +2661,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   style={{
                     ...iconBtn,
                     width: 'auto',
-                    minWidth: isMobile ? '85px' : '115px',
-                    height: isMobile ? '50px' : '56px',
-                    padding: '0 18px',
+                    minWidth: isMobile ? '68px' : '115px',
+                    height: isMobile ? '42px' : '56px',
+                    padding: isMobile ? '0 10px' : '0 18px',
                     borderRadius: '16px',
                     background: pendingCutStart !== null
                       ? colors.gradientAccent
@@ -2665,16 +2690,16 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   }}>
                     <span style={{
                       fontWeight: '800',
-                      fontSize: '20px',
+                      fontSize: isMobile ? '15px' : '20px',
                       background: pendingCutStart !== null ? 'rgba(255,255,255,0.2)' : colors.border,
-                      width: '30px',
-                      height: '30px',
+                      width: isMobile ? '22px' : '30px',
+                      height: isMobile ? '22px' : '30px',
                       borderRadius: '8px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>O</span>
-                    <span style={{ fontSize: '10px', fontWeight: '600' }}>
+                    <span style={{ fontSize: isMobile ? '9px' : '10px', fontWeight: '600' }}>
                       {pendingCutStart !== null ? '+ Crear' : 'Marcar OUT'}
                     </span>
                   </div>
@@ -2712,7 +2737,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     color: leftSidebarOpen ? '#fff' : colors.text,
                     border: leftSidebarOpen ? 'none' : `1px solid ${colors.border}`,
                     borderRadius: '10px',
-                    padding: isMobile ? '10px 14px' : '12px 18px',
+                    padding: isMobile ? '8px 12px' : '12px 18px',
                     fontSize: isMobile ? '12px' : '13px',
                     fontWeight: '600',
                     cursor: 'pointer',
@@ -2743,7 +2768,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     color: sidebarOpen ? '#000' : colors.text,
                     border: sidebarOpen ? 'none' : `1px solid ${colors.border}`,
                     borderRadius: '10px',
-                    padding: isMobile ? '10px 14px' : '12px 18px',
+                    padding: isMobile ? '8px 12px' : '12px 18px',
                     fontSize: isMobile ? '12px' : '13px',
                     fontWeight: '600',
                     cursor: 'pointer',
@@ -2771,8 +2796,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               </div>
             </div>
 
-            {/* Keyboard shortcuts hint */}
-            {segments.length === 0 && !sidebarOpen && (
+            {/* Keyboard shortcuts hint: solo desktop (en movil no hay
+                teclado fisico y el hint ocupa espacio util) */}
+            {!isMobile && segments.length === 0 && !sidebarOpen && (
               <div style={{
                 background: colors.bg, borderTop: `1px solid ${colors.border}`,
                 padding: '16px', textAlign: 'center',

@@ -923,36 +923,6 @@ export default function App() {
             Subir Video
           </motion.button>
 
-          {!HIDE_URL_DOWNLOAD && (
-          <motion.button
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(209, 245, 102, 0.4)' }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              setFileManagerTab('download');
-              setShowFileManager(true);
-            }}
-            style={{
-              background: colors.accent,
-              color: '#000',
-              padding: isMobile ? '16px 24px' : '20px 32px',
-              borderRadius: '9999px',
-              fontSize: isMobile ? '16px' : '17px',
-              fontWeight: '700',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              boxShadow: '0 6px 25px rgba(209, 245, 102, 0.3)',
-              transition: 'box-shadow 0.2s ease',
-            }}
-          >
-            <FiLink size={22} />
-            Descargar desde URL
-          </motion.button>
-          )}
-
           <motion.button
             whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(12, 182, 145, 0.4)' }}
             whileTap={{ scale: 0.98 }}
