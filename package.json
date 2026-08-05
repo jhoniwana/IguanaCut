@@ -1,6 +1,6 @@
 {
-  "name": "lossless-cut-web",
-  "productName": "LosslessCut Web Edition",
+  "name": "iguana-cut",
+  "productName": "IguanaCut",
   "description": "Web-based lossless video/audio cutting tool powered by Go + React",
   "version": "1.0.0",
   "license": "GPL-2.0-only",

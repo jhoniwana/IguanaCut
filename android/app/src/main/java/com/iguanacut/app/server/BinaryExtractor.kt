@@ -1,4 +1,4 @@
-package com.losslesscut.app.server
+package com.iguanacut.app.server
 
 import android.content.Context
 import android.util.Log

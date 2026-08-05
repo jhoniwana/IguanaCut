@@ -1,11 +1,11 @@
-package com.losslesscut.app
+package com.iguanacut.app
 
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import com.losslesscut.app.server.ServerManager
+import com.iguanacut.app.server.ServerManager
 
-class LosslessCutApp : Application() {
+class IguanaCutApp : Application() {
 
     val serverManager: ServerManager by lazy { ServerManager(this) }
 

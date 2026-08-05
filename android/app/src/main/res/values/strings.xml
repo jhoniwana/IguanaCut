@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">LosslessCut</string>
-    <string name="notification_channel_name">LosslessCut server</string>
-    <string name="notification_title">LosslessCut</string>
+    <string name="app_name">IguanaCut</string>
+    <string name="notification_channel_name">IguanaCut server</string>
+    <string name="notification_title">IguanaCut</string>
     <string name="notification_text">Editor de video corriendo en segundo plano</string>
     <string name="loading">Iniciando editor…</string>
 </resources>

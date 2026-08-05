@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.LosslessCut" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.IguanaCut" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#0d1117</item>
         <item name="android:navigationBarColor">#0d1117</item>
         <item name="android:windowBackground">#0d1117</item>

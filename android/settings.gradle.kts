@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LosslessCut"
+rootProject.name = "IguanaCut"
 include(":app")

@@ -1,4 +1,4 @@
-package com.losslesscut.app.server
+package com.iguanacut.app.server
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -7,8 +7,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.losslesscut.app.MainActivity
-import com.losslesscut.app.R
+import com.iguanacut.app.MainActivity
+import com.iguanacut.app.R
 
 /**
  * Foreground service que mantiene vivo el servidor Go mientras la app
@@ -21,7 +21,7 @@ class ServerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
-        (application as com.losslesscut.app.LosslessCutApp).serverManager.start()
+        (application as com.iguanacut.app.IguanaCutApp).serverManager.start()
         return START_STICKY
     }
 
@@ -47,7 +47,7 @@ class ServerService : Service() {
     }
 
     override fun onDestroy() {
-        (application as com.losslesscut.app.LosslessCutApp).serverManager.stop()
+        (application as com.iguanacut.app.IguanaCutApp).serverManager.stop()
         super.onDestroy()
     }
 }

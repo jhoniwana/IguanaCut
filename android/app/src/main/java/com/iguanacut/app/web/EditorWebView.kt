@@ -1,6 +1,6 @@
-package com.losslesscut.app.web
+package com.iguanacut.app.web
 
-import com.losslesscut.app.BuildConfig
+import com.iguanacut.app.BuildConfig
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -24,7 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import com.losslesscut.app.server.ServerManager
+import com.iguanacut.app.server.ServerManager
 import org.json.JSONObject
 
 /**

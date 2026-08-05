@@ -1173,7 +1173,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <img
             src="/app-logo.png"
-            alt="Video Studio"
+            alt="IguanaCut"
             style={{
               height: isMobile ? '26px' : '44px',
               width: 'auto',
@@ -1189,7 +1189,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               color: colors.textSecondary,
               letterSpacing: '0.5px',
             }}>
-              Video Studio
+              IguanaCut
             </h1>
             {videoFile && (
               <p style={{ margin: 0, fontSize: '12px', color: colors.textMuted, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1339,7 +1339,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                 fontSize: '24px',
                 fontWeight: '600',
                 color: colors.text,
-              }}>Video Studio</h2>
+              }}>IguanaCut</h2>
               <p style={{ color: colors.textSecondary, margin: 0, fontSize: '15px' }}>
                 Edita, recorta y censura videos fácilmente
               </p>

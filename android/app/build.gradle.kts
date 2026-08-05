@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.losslesscut.app"
+    namespace = "com.iguanacut.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.losslesscut.app"
+        applicationId = "com.iguanacut.app"
         minSdk = 28
         // targetSdk 28 a proposito (== minSdk): con targetSdk >= 29 la app cae
         // en untrusted_app_29/30/32/34, dominios SELinux que DENIEGAN

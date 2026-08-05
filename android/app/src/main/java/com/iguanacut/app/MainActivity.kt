@@ -1,4 +1,4 @@
-package com.losslesscut.app
+package com.iguanacut.app
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -24,9 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.losslesscut.app.server.ServerManager
-import com.losslesscut.app.server.ServerService
-import com.losslesscut.app.web.EditorWebView
+import com.iguanacut.app.server.ServerManager
+import com.iguanacut.app.server.ServerService
+import com.iguanacut.app.web.EditorWebView
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ServerScreen() {
-        val app = application as LosslessCutApp
+        val app = application as IguanaCutApp
         val serverManager = remember { app.serverManager }
         val ready by produceState(initialValue = false) {
             while (!value) {

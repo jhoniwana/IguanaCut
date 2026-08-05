@@ -1,8 +1,8 @@
-package com.losslesscut.app.server
+package com.iguanacut.app.server
 
 import android.content.Context
 import android.util.Log
-import com.losslesscut.app.BuildConfig
+import com.iguanacut.app.BuildConfig
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -147,6 +147,6 @@ class ServerManager(private val appContext: Context) {
         private const val TAG = "ServerManager"
         const val LOCAL_PORT = 8090
         const val BASE_URL = "http://127.0.0.1:$LOCAL_PORT"
-        const val NOTIFICATION_CHANNEL_ID = "losslesscut_server"
+        const val NOTIFICATION_CHANNEL_ID = "iguanacut_server"
     }
 }

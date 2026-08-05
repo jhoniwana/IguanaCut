@@ -73,9 +73,5 @@ scripts/android/.quickjs-build/
 *.aab
 
 # Tool/editor state
-.codewhale/
-obsidian docs/.obsidian/
-obsidian docs/Untitled.base
 
 # Referencia de diseno local (assets de marca) - no versionar
-iguana/

@@ -790,7 +790,7 @@ export default function App() {
             {/* Logo oficial (frasco verde, fondo transparente) */}
             <img
               src="/app-logo.png"
-              alt="Video Studio"
+              alt="IguanaCut"
               style={{ height: '38px', width: 'auto', filter: 'drop-shadow(0 0 12px rgba(12, 182, 145, 0.4))' }}
             />
             <div>
@@ -800,7 +800,7 @@ export default function App() {
                 fontWeight: '600',
                 color: colors.textSecondary,
               }}>
-                Video Studio
+                IguanaCut
               </h1>
               {!isMobile && (
                 <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>
@@ -865,7 +865,7 @@ export default function App() {
           }}>
             <img
               src="/app-logo.png"
-              alt="Video Studio"
+              alt="IguanaCut"
               style={{ height: '56px', width: 'auto', filter: 'drop-shadow(0 0 16px rgba(209, 245, 102, 0.35))' }}
             />
           </div>
@@ -1151,11 +1151,11 @@ export default function App() {
         }}>
           <img
             src="/app-logo.png"
-            alt="Video Studio"
+            alt="IguanaCut"
             style={{ height: '36px', width: 'auto', marginBottom: '10px', filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))' }}
           />
           <div style={{ color: colors.text, fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-            Video Studio
+            IguanaCut
           </div>
           <div style={{ color: colors.textMuted, fontSize: '12px', marginBottom: '14px' }}>
             Creado por <span style={{ color: colors.secondary, fontWeight: '600' }}>Jhon Escorcia</span>
