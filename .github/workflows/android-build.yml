@@ -78,16 +78,22 @@ jobs:
           name: iguanacut-play-release
           path: android/app/build/outputs/apk/play/release/*.apk
 
-      - name: Publicar Release v1.0.0
+      - name: Publish Release v1.0.0
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: IguanaCut v1.0.0
           body: |
-            APK del flavor **play** (sin yt-dlp) compilado desde `main`.
+            Your pocket video cutter 🦎
 
-            - El flavor *enhanced* (con yt-dlp) se compila localmente:
-              `scripts/android/build-android.sh enhanced release`
+            Download any video (YouTube and hundreds of sites via yt-dlp),
+            mark the start and end, and export the fragment without losing
+            quality. Everything on your phone: no subscriptions, no accounts,
+            no servers, no ads.
+
+            📲 Grab the APK from Assets and install it (Android 9+). The
+            *enhanced* flavor (with yt-dlp) is built locally with:
+            `scripts/android/build-android.sh enhanced release`
           files: android/app/build/outputs/apk/play/release/*.apk
           allowUpdates: true
           make_latest: true
