@@ -343,7 +343,10 @@ export default function App() {
 
   // Start download from URL (YouTube, etc.)
   const startDownload = async () => {
-    if (!downloadUrl.trim()) return;
+    if (!downloadUrl.trim()) {
+      setDownloadError('Pega una URL primero (ej. https://youtube.com/watch?v=...)');
+      return;
+    }
 
     setIsDownloading(true);
     setDownloadProgress(0);
@@ -1697,6 +1700,8 @@ export default function App() {
                       </div>
                       <input
                         type="text"
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
                         value={downloadUrl}
                         onChange={(e) => setDownloadUrl(e.target.value)}
                         placeholder="https://youtube.com/watch?v=... o cualquier URL"
@@ -1716,7 +1721,7 @@ export default function App() {
                       />
                       <button
                         onClick={startDownload}
-                        disabled={isDownloading || !downloadUrl.trim()}
+                        disabled={isDownloading}
                         style={{
                           width: '100%',
                           background: isDownloading ? colors.card : colors.gradient,
