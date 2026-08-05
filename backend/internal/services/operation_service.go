@@ -301,6 +301,13 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 	operation.CompletedAt = &now
 	operation.OutputFiles = outputFiles
 
+	// Vincular cada corte exportado con su video de origen (indice persistido)
+	for _, f := range outputFiles {
+		if err := s.storage.RegisterOutput(filepath.Base(f), project.VideoID); err != nil {
+			s.logger.Warn("Failed to index output", zap.String("file", f), zap.Error(err))
+		}
+	}
+
 	s.logger.Info("Export completed",
 		zap.String("operationId", operation.ID),
 		zap.Int("outputFilesCount", len(outputFiles)),

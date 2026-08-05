@@ -55,6 +55,22 @@ func (h *DownloadHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, download)
 }
 
+// File serves the downloaded file (for playback/download).
+func (h *DownloadHandler) File(c *gin.Context) {
+	id := c.Param("id")
+	download, err := h.services.Download.GetDownload(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if download.FilePath == "" || !h.services.Storage.FileExists(download.FilePath) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+	c.Header("Content-Disposition", "attachment")
+	c.File(download.FilePath)
+}
+
 // List returns all downloads
 func (h *DownloadHandler) List(c *gin.Context) {
 	downloads, err := h.services.Download.ListDownloads()

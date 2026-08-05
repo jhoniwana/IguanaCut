@@ -74,6 +74,7 @@ export interface OutputFile {
   file_name: string;
   size: number;
   created_at: string;
+  video_id?: string;
 }
 
 export interface Operation {

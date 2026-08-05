@@ -2,4 +2,6 @@
 <paths>
     <!-- Archivos exportados por el server Go interno (filesDir/storage/outputs) -->
     <files-path name="outputs" path="storage/outputs/" />
+    <!-- Videos descargados por URL (filesDir/storage/downloads) -->
+    <files-path name="downloads" path="storage/downloads/" />
 </paths>

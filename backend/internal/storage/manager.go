@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -166,6 +167,110 @@ func (m *Manager) GetProject(projectID string) (*models.Project, error) {
 	}
 
 	return &project, nil
+}
+
+// outputsIndexFile is the persisted mapping output file -> source video.
+type outputsIndexFile struct {
+	Outputs []models.OutputFile `json:"outputs"`
+}
+
+// OutputsIndexPath returns the path of the outputs index file.
+func (m *Manager) OutputsIndexPath() string {
+	return filepath.Join(m.OutputsDir(), ".outputs_index.json")
+}
+
+// RegisterOutput records an exported file linked to its source video.
+func (m *Manager) RegisterOutput(fileName, videoID string) error {
+	idx, err := m.loadOutputsIndex()
+	if err != nil {
+		return err
+	}
+	idx.Outputs = append(idx.Outputs, models.OutputFile{
+		FileName:  fileName,
+		CreatedAt: time.Now(),
+		VideoID:   videoID,
+	})
+	return m.saveOutputsIndex(idx)
+}
+
+// ListOutputs merges the files on disk with the persisted index.
+func (m *Manager) ListOutputs() ([]models.OutputFile, error) {
+	idx, err := m.loadOutputsIndex()
+	if err != nil {
+		return nil, err
+	}
+	byName := map[string]models.OutputFile{}
+	for _, o := range idx.Outputs {
+		byName[o.FileName] = o
+	}
+	entries, err := os.ReadDir(m.OutputsDir())
+	if err != nil {
+		return nil, err
+	}
+	out := []models.OutputFile{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		meta, _ := byName[e.Name()]
+		out = append(out, models.OutputFile{
+			FileName:  e.Name(),
+			Size:      info.Size(),
+			CreatedAt: meta.CreatedAt,
+			VideoID:   meta.VideoID,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+// RemoveOutput deletes the file and its index entry.
+func (m *Manager) RemoveOutput(fileName string) error {
+	if err := os.Remove(m.GetOutputPath(fileName)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete output %s: %w", fileName, err)
+	}
+	idx, err := m.loadOutputsIndex()
+	if err != nil {
+		return err
+	}
+	filtered := idx.Outputs[:0]
+	for _, o := range idx.Outputs {
+		if o.FileName != fileName {
+			filtered = append(filtered, o)
+		}
+	}
+	idx.Outputs = filtered
+	return m.saveOutputsIndex(idx)
+}
+
+func (m *Manager) loadOutputsIndex() (outputsIndexFile, error) {
+	var idx outputsIndexFile
+	data, err := os.ReadFile(m.OutputsIndexPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return idx, nil
+		}
+		return idx, err
+	}
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return idx, err
+	}
+	if idx.Outputs == nil {
+		idx.Outputs = []models.OutputFile{}
+	}
+	return idx, nil
+}
+
+func (m *Manager) saveOutputsIndex(idx outputsIndexFile) error {
+	data, err := json.MarshalIndent(idx, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(m.OutputsIndexPath(), data, 0644)
 }
 
 // GetOutputPath returns the full path for an output file

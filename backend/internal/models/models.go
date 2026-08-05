@@ -154,11 +154,11 @@ type DetectionZone struct {
 
 // BlurStyleConfig represents the blur style configuration
 type BlurStyleConfig struct {
-	Style     string `json:"style"`                // "pixelate", "gaussian", "color", "box", "emoji", "image"
-	Intensity int    `json:"intensity,omitempty"`  // For pixelate/gaussian
-	Color     string `json:"color,omitempty"`      // For color style (hex)
-	Emoji     string `json:"emoji,omitempty"`      // For emoji style
-	ImageData string `json:"imageData,omitempty"`  // Base64 image for image style
+	Style     string `json:"style"`               // "pixelate", "gaussian", "color", "box", "emoji", "image"
+	Intensity int    `json:"intensity,omitempty"` // For pixelate/gaussian
+	Color     string `json:"color,omitempty"`     // For color style (hex)
+	Emoji     string `json:"emoji,omitempty"`     // For emoji style
+	ImageData string `json:"imageData,omitempty"` // Base64 image for image style
 }
 
 // ExportRequest represents an export request
@@ -183,13 +183,13 @@ type ExportRequest struct {
 	CropWidth   int    `json:"crop_width,omitempty"`
 	CropHeight  int    `json:"crop_height,omitempty"`
 	// Blur settings
-	BlurMode                string            `json:"blur_mode,omitempty"`                  // "off", "auto", "manual", "guided"
-	BlurAutoIntensity       int               `json:"blur_auto_intensity,omitempty"`        // For auto mode
-	BlurRegions             []BlurRegion      `json:"blur_regions,omitempty"`               // For manual mode
-	DetectionZones          []DetectionZone   `json:"detection_zones,omitempty"`            // For guided mode
-	BlurConfirmedSignatures [][]float64       `json:"blur_confirmed_signatures,omitempty"`  // User-confirmed face signatures
-	BlurPerClip             map[string]bool   `json:"blur_per_clip,omitempty"`              // Per-clip blur enabled/disabled
-	BlurStyle               *BlurStyleConfig  `json:"blur_style,omitempty"`                 // Blur style configuration
+	BlurMode                string           `json:"blur_mode,omitempty"`                 // "off", "auto", "manual", "guided"
+	BlurAutoIntensity       int              `json:"blur_auto_intensity,omitempty"`       // For auto mode
+	BlurRegions             []BlurRegion     `json:"blur_regions,omitempty"`              // For manual mode
+	DetectionZones          []DetectionZone  `json:"detection_zones,omitempty"`           // For guided mode
+	BlurConfirmedSignatures [][]float64      `json:"blur_confirmed_signatures,omitempty"` // User-confirmed face signatures
+	BlurPerClip             map[string]bool  `json:"blur_per_clip,omitempty"`             // Per-clip blur enabled/disabled
+	BlurStyle               *BlurStyleConfig `json:"blur_style,omitempty"`                // Blur style configuration
 	// Watermark settings
 	Watermark *WatermarkOptions `json:"watermark,omitempty"` // Watermark overlay configuration
 }
@@ -197,8 +197,8 @@ type ExportRequest struct {
 // PreviewRequest represents a preview generation request
 type PreviewRequest struct {
 	VideoID        string          `json:"video_id" binding:"required"`
-	StartTime      float64         `json:"start_time"`                        // Start time for preview
-	Duration       float64         `json:"duration,omitempty"`                // Preview duration (default 5s)
+	StartTime      float64         `json:"start_time"`         // Start time for preview
+	Duration       float64         `json:"duration,omitempty"` // Preview duration (default 5s)
 	CropEnabled    bool            `json:"crop_enabled,omitempty"`
 	CropX          int             `json:"crop_x,omitempty"`
 	CropY          int             `json:"crop_y,omitempty"`
@@ -254,9 +254,9 @@ type TimelineProject struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	SessionID     string         `json:"session_id,omitempty"`
-	VideoIDs      []string       `json:"video_ids"`       // Multiple video sources
-	TimelineClips []TimelineClip `json:"timeline_clips"`  // Clips on timeline
-	TotalDuration float64        `json:"total_duration"`  // Computed total
+	VideoIDs      []string       `json:"video_ids"`      // Multiple video sources
+	TimelineClips []TimelineClip `json:"timeline_clips"` // Clips on timeline
+	TotalDuration float64        `json:"total_duration"` // Computed total
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 }
@@ -308,17 +308,30 @@ type WatermarkOptions struct {
 
 // TimelineExportRequest represents a request to export a timeline project
 type TimelineExportRequest struct {
-	ProjectID      string   `json:"project_id"`
-	ClipIDs        []string `json:"clip_ids,omitempty"` // If empty, export all
-	OutputName     string   `json:"output_name,omitempty"`
-	Format         string   `json:"format,omitempty"`
-	ForceReencode  bool     `json:"force_reencode,omitempty"`
+	ProjectID     string   `json:"project_id"`
+	ClipIDs       []string `json:"clip_ids,omitempty"` // If empty, export all
+	OutputName    string   `json:"output_name,omitempty"`
+	Format        string   `json:"format,omitempty"`
+	ForceReencode bool     `json:"force_reencode,omitempty"`
 	// Inherited from ExportRequest for effects
-	CropEnabled bool   `json:"crop_enabled,omitempty"`
-	CropX       int    `json:"crop_x,omitempty"`
-	CropY       int    `json:"crop_y,omitempty"`
-	CropWidth   int    `json:"crop_width,omitempty"`
-	CropHeight  int    `json:"crop_height,omitempty"`
+	CropEnabled bool `json:"crop_enabled,omitempty"`
+	CropX       int  `json:"crop_x,omitempty"`
+	CropY       int  `json:"crop_y,omitempty"`
+	CropWidth   int  `json:"crop_width,omitempty"`
+	CropHeight  int  `json:"crop_height,omitempty"`
 	// Watermark settings
 	Watermark *WatermarkOptions `json:"watermark,omitempty"`
+}
+
+// OutputFile represents an exported cut, linked to its source video.
+type OutputFile struct {
+	FileName  string    `json:"file_name"`
+	Size      int64     `json:"size"`
+	CreatedAt time.Time `json:"created_at"`
+	VideoID   string    `json:"video_id,omitempty"`
+}
+
+// outputsIndex is the persisted mapping output file -> source video.
+type outputsIndex struct {
+	Outputs []OutputFile `json:"outputs"`
 }

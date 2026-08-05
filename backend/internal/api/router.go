@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -160,6 +159,7 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			downloads.GET("", downloadHandler.List)
 			downloads.DELETE("", downloadHandler.ClearAll)
 			downloads.GET("/:id", downloadHandler.Get)
+			downloads.GET("/:id/file", downloadHandler.File)
 			downloads.POST("/:id/cancel", downloadHandler.Cancel)
 		}
 
@@ -173,27 +173,11 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 		// Output file downloads (exported videos) - optimized with better headers
 		// Listar archivos exportados (cortos)
 		api.GET("/outputs", func(c *gin.Context) {
-			dir := services.Storage.OutputsDir()
-			entries, err := os.ReadDir(dir)
+			outputs, err := services.Storage.ListOutputs()
 			if err != nil {
-				logger.Warn("Cannot list outputs", zap.String("dir", dir), zap.Error(err))
+				logger.Warn("Cannot list outputs", zap.Error(err))
 				c.JSON(500, gin.H{"error": "cannot list outputs"})
 				return
-			}
-			outputs := []gin.H{}
-			for _, e := range entries {
-				if e.IsDir() {
-					continue
-				}
-				info, err := e.Info()
-				if err != nil {
-					continue
-				}
-				outputs = append(outputs, gin.H{
-					"file_name":  e.Name(),
-					"size":       info.Size(),
-					"created_at": info.ModTime().Format(time.RFC3339),
-				})
 			}
 			c.JSON(200, gin.H{"outputs": outputs})
 		})
@@ -201,12 +185,11 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 		// Borrar un archivo exportado
 		api.DELETE("/outputs/:filename", func(c *gin.Context) {
 			filename := filepath.Base(c.Param("filename"))
-			filepath := services.Storage.GetOutputPath(filename)
-			if !services.Storage.FileExists(filepath) {
+			if !services.Storage.FileExists(services.Storage.GetOutputPath(filename)) {
 				c.JSON(404, gin.H{"error": "file not found"})
 				return
 			}
-			if err := os.Remove(filepath); err != nil {
+			if err := services.Storage.RemoveOutput(filename); err != nil {
 				logger.Warn("Cannot delete output", zap.String("filename", filename), zap.Error(err))
 				c.JSON(500, gin.H{"error": "cannot delete file"})
 				return

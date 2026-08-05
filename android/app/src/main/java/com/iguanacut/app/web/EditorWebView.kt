@@ -6,6 +6,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.app.DownloadManager
+import android.provider.MediaStore
+import android.os.Build
+import android.content.ContentValues
 import android.os.Environment
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -60,6 +63,57 @@ class AndroidBridge(private val context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             val chooser = Intent.createChooser(intent, "Compartir")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+            "{\"ok\": true}"
+        } catch (e: Exception) {
+            "{\"ok\": false, \"error\": \"${e.message}\"}"
+        }
+    }
+
+
+    @JavascriptInterface
+    fun saveToGallery(fileName: String): String {
+        return try {
+            val src = listOf(
+                File(context.filesDir, "storage/downloads/$fileName"),
+                File(context.filesDir, "storage/outputs/$fileName"),
+            ).firstOrNull { it.exists() } ?: return "{\"ok\": false, \"error\": \"not found\"}"
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                if (Build.VERSION.SDK_INT >= 29) {
+                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/IguanaCut")
+                } else {
+                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "IguanaCut")
+                    dir.mkdirs()
+                    put(MediaStore.Video.Media.DATA, File(dir, fileName).absolutePath)
+                }
+            }
+            val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: return "{\"ok\": false, \"error\": \"insert failed\"}"
+            resolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                ?: return "{\"ok\": false, \"error\": \"write failed\"}"
+            "{\"ok\": true}"
+        } catch (e: Exception) {
+            "{\"ok\": false, \"error\": \"${e.message}\"}"
+        }
+    }
+
+    @JavascriptInterface
+    fun openVideo(fileName: String): String {
+        return try {
+            val file = listOf(
+                File(context.filesDir, "storage/downloads/$fileName"),
+                File(context.filesDir, "storage/outputs/$fileName"),
+            ).firstOrNull { it.exists() } ?: return "{\"ok\": false, \"error\": \"not found\"}"
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "video/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "Reproducir")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
             "{\"ok\": true}"
