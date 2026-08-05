@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -77,3 +77,17 @@ jobs:
         with:
           name: iguanacut-play-release
           path: android/app/build/outputs/apk/play/release/*.apk
+
+      - name: Publicar Release v1.0.0
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: IguanaCut v1.0.0
+          body: |
+            APK del flavor **play** (sin yt-dlp) compilado desde `main`.
+
+            - El flavor *enhanced* (con yt-dlp) se compila localmente:
+              `scripts/android/build-android.sh enhanced release`
+          files: android/app/build/outputs/apk/play/release/*.apk
+          allowUpdates: true
+          make_latest: true
