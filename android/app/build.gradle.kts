@@ -11,7 +11,12 @@ android {
     defaultConfig {
         applicationId = "com.losslesscut.app"
         minSdk = 28
-        targetSdk = 35
+        // targetSdk 28 a proposito (== minSdk): con targetSdk >= 29 la app cae
+        // en untrusted_app_29/30/32/34, dominios SELinux que DENIEGAN
+        // execute_no_trans sobre app_data_file; el server Go/ffmpeg/yt-dlp
+        // extraidos a filesDir no pueden ejecutarse (avc denied EACCES).
+        // targetSdk 28 -> untrusted_app_27, que conserva execute_no_trans.
+        targetSdk = 28
         versionCode = 1
         versionName = "1.0.0"
 

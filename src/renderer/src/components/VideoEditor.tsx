@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
-import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove, FiImage } from 'react-icons/fi';
+import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove, FiImage, FiFolder } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit, MdBlurOn } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
 import IntroOutroSelector from './IntroOutroSelector';
@@ -8,31 +8,32 @@ import CropSelector, { CropConfig } from './CropSelector';
 import BlurRegionSelector, { BlurConfig, ClipBlurZone } from './BlurRegionSelector';
 import WatermarkSettings, { WatermarkConfig, getDefaultWatermarkConfig } from './WatermarkSettings';
 
-// Purple theme
+// Tema Iguana: verde marca #0CB691 del logo oficial + neutros oscuros
 const colors = {
-  bg: '#0a0a0f',
-  surface: '#12121a',
-  card: '#1a1a24',
-  border: '#2a2a3a',
-  primary: '#8B5CF6',
-  secondary: '#A78BFA',
-  accent: '#C084FC',
-  danger: '#ff4466',
+  bg: '#0d1110',
+  surface: '#151b19',
+  card: '#1c2421',
+  border: '#2e3d37',
+  primary: '#0CB691',
+  secondary: '#4FD6B8',
+  accent: '#D1F566',
+  danger: '#f55353',
   text: '#ffffff',
-  textSecondary: '#b0b0c0',
-  textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
-  gradientAccent: 'linear-gradient(135deg, #A78BFA 0%, #C084FC 100%)',
-  shadow: '0 4px 20px rgba(139, 92, 246, 0.15)',
-  shadowDeep: '0 8px 40px rgba(167, 139, 250, 0.2)',
+  textSecondary: '#c3cfc9',
+  textMuted: '#7d8f88',
+  gradient: 'linear-gradient(135deg, #089477 0%, #4FD6B8 100%)',
+  gradientAccent: 'linear-gradient(135deg, #0CB691 0%, #D1F566 100%)',
+  shadow: '0 4px 20px rgba(12, 182, 145, 0.18)',
+  shadowDeep: '0 8px 40px rgba(12, 182, 145, 0.22)',
 };
 
 interface Props {
   onClose: () => void;
+  onOpenFiles?: () => void;
   initialVideoId?: string | null;
 }
 
-export default function VideoEditor({ onClose, initialVideoId }: Props) {
+export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -1084,7 +1085,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
   };
 
   // Segment colors
-  const segColors = ['#8B5CF6', '#A78BFA', '#C084FC', '#7C3AED', '#6D28D9', '#5B21B6'];
+  const segColors = ['#0CB691', '#4FD6B8', '#D1F566', '#089477', '#2FBF9F', '#5CE1C2'];
   const selectedCount = segments.filter(s => s.selected).length;
 
   // Styles
@@ -1123,7 +1124,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
     gap: '8px',
     transition: 'all 0.2s ease',
     width: '100%',
-    boxShadow: '0 4px 20px rgba(0, 229, 255, 0.3)',
+    boxShadow: '0 4px 20px rgba(12, 182, 145, 0.3)',
     textShadow: '0 1px 2px rgba(0,0,0,0.2)',
   });
 
@@ -1163,21 +1164,16 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{
-            width: isMobile ? '36px' : '44px',
-            height: isMobile ? '36px' : '44px',
-            borderRadius: '10px',
-            background: colors.gradient,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: isMobile ? '16px' : '20px',
-            fontWeight: '700',
-            color: '#fff',
-            flexShrink: 0,
-          }}>
-            LC
-          </div>
+          <img
+            src="/app-logo.png"
+            alt="Video Studio"
+            style={{
+              height: isMobile ? '36px' : '44px',
+              width: 'auto',
+              flexShrink: 0,
+              filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))',
+            }}
+          />
           <div>
             <h1 style={{
               margin: 0,
@@ -1196,6 +1192,17 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          {onOpenFiles && (
+            <button onClick={onOpenFiles} style={{
+              ...iconBtn,
+              background: colors.card,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '50%',
+              transition: 'all 0.2s ease',
+            }} title="Archivos">
+              <FiFolder size={20} />
+            </button>
+          )}
           <button onClick={() => setShowHelp(true)} style={{
             ...iconBtn,
             background: colors.card,
@@ -1233,7 +1240,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
             maxWidth: '420px',
             width: '100%',
             border: `1px solid ${colors.border}`,
-            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 229, 255, 0.1)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(12, 182, 145, 0.12)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
               <div style={{
@@ -1301,7 +1308,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
               padding: '20px',
               borderRadius: '24px',
               background: `linear-gradient(145deg, rgba(26, 26, 36, 0.8) 0%, rgba(18, 18, 26, 0.9) 100%)`,
-              boxShadow: `0 8px 40px rgba(139, 92, 246, 0.2), 0 0 60px rgba(167, 139, 250, 0.15)`,
+              boxShadow: `0 8px 40px rgba(12, 182, 145, 0.22), 0 0 60px rgba(209, 245, 102, 0.12)`,
               border: `1px solid ${colors.border}`,
             }}>
               <div style={{
@@ -1378,7 +1385,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     justifyContent: leftSidebarOpen ? 'space-between' : 'center',
                     gap: '8px',
                     borderBottom: `1px solid rgba(255,255,255,0.1)`,
-                    boxShadow: '0 4px 15px rgba(255, 20, 138, 0.2)',
+                    boxShadow: '0 4px 15px rgba(209, 245, 102, 0.2)',
                     flexShrink: 0,
                   }}
                 >
@@ -1780,7 +1787,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     position: 'absolute',
                     top: '10px',
                     left: '10px',
-                    background: 'rgba(255, 20, 138, 0.9)',
+                    background: 'rgba(12, 182, 145, 0.9)',
                     color: '#fff',
                     padding: '6px 12px',
                     borderRadius: '8px',
@@ -1862,7 +1869,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     justifyContent: sidebarOpen ? 'space-between' : 'center',
                     gap: '8px',
                     borderBottom: `1px solid rgba(255,255,255,0.1)`,
-                    boxShadow: '0 4px 15px rgba(0, 229, 255, 0.2)',
+                    boxShadow: '0 4px 15px rgba(12, 182, 145, 0.2)',
                     flexShrink: 0,
                   }}
                 >
@@ -2374,9 +2381,9 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                             style={{
                               width: '100%',
                               marginBottom: '6px',
-                              background: isGeneratingPreview ? colors.card : 'rgba(139, 92, 246, 0.2)',
-                              color: isGeneratingPreview ? colors.textMuted : '#8b5cf6',
-                              border: `1px solid ${isGeneratingPreview ? colors.border : '#8b5cf6'}`,
+                              background: isGeneratingPreview ? colors.card : 'rgba(12, 182, 145, 0.2)',
+                              color: isGeneratingPreview ? colors.textMuted : '#0CB691',
+                              border: `1px solid ${isGeneratingPreview ? colors.border : '#0CB691'}`,
                               borderRadius: '6px',
                               padding: '6px 10px',
                               fontSize: '11px',
@@ -2416,7 +2423,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '10px',
-                            boxShadow: '0 6px 20px rgba(0, 229, 255, 0.35), 0 0 30px rgba(255, 20, 138, 0.15)',
+                            boxShadow: '0 6px 20px rgba(12, 182, 145, 0.35), 0 0 30px rgba(209, 245, 102, 0.15)',
                             transition: 'all 0.2s ease',
                             textShadow: '0 1px 3px rgba(0,0,0,0.3)',
                           }}
@@ -2444,7 +2451,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px',
-                          boxShadow: '0 4px 15px rgba(255, 20, 138, 0.25)',
+                          boxShadow: '0 4px 15px rgba(209, 245, 102, 0.25)',
                           animation: 'pulse 2s infinite',
                         }}
                       >
@@ -2632,7 +2639,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                     fontWeight: '700',
                     gap: '8px',
                     boxShadow: pendingCutStart !== null
-                      ? '0 6px 20px rgba(255, 20, 138, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)'
+                      ? '0 6px 20px rgba(209, 245, 102, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)'
                       : '0 2px 10px rgba(0,0,0,0.2)',
                     opacity: pendingCutStart === null && !editingClipId ? 0.5 : 1,
                     cursor: pendingCutStart === null && !editingClipId ? 'not-allowed' : 'pointer',
@@ -2974,7 +2981,7 @@ export default function VideoEditor({ onClose, initialVideoId }: Props) {
                   width: '40px',
                   height: '40px',
                   borderRadius: '10px',
-                  background: '#8b5cf6',
+                  background: '#0CB691',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

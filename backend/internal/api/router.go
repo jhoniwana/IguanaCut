@@ -21,6 +21,18 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger))
 
+	// Los elementos nativos (<video>, <img>) no pueden enviar headers,
+	// asi que el frontend adjunta la sesion como ?session= en la URL.
+	// Normalizarla a X-Session-ID para que los handlers la vean igual.
+	router.Use(func(c *gin.Context) {
+		if c.GetHeader("X-Session-ID") == "" {
+			if s := c.Query("session"); s != "" {
+				c.Request.Header.Set("X-Session-ID", s)
+			}
+		}
+		c.Next()
+	})
+
 	// CORS
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = cfg.Server.CorsOrigins

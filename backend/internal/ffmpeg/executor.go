@@ -501,7 +501,9 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 		"-ss", fmt.Sprintf("%.3f", timestamp),
 		"-i", input,
 		"-vframes", "1",
-		"-crf", fmt.Sprintf("%d", quality),
+		// -q:v (no -crf): el encoder de imagenes por defecto es mjpeg/png,
+		// que no conocen -crf (opcion de libx264) -> "Option not found".
+		"-q:v", fmt.Sprintf("%d", quality),
 		"-y",
 		output,
 	}

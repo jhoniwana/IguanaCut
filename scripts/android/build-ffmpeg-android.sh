@@ -37,9 +37,32 @@ if [ ! -f "$WORK/ffmpeg/configure" ]; then
         https://git.ffmpeg.org/ffmpeg.git "$WORK/ffmpeg"
 fi
 
+# x264: encoder de video para el re-encode (cortes precisos, crop, watermark).
+# NOTA: --enable-gpl hace que el binario resultante sea GPL.
+if [ ! -f "$WORK/x264/configure" ]; then
+    echo "== Descargando x264 =="
+    git clone --depth 1 https://code.videolan.org/videolan/x264.git "$WORK/x264"
+fi
+if [ ! -f "$OUT/x264/lib/libx264.a" ]; then
+    echo "== Compilando x264 para $ARCH =="
+    # El NDK solo trae llvm-*: x264 busca <prefix>ar/nm/ranlib/strings/strip
+    for t in ar nm ranlib strings strip; do
+        ln -sf "llvm-$t" "${CROSS_PREFIX}$t"
+    done
+    cd "$WORK/x264"
+    CC="${CROSS_PREFIX}clang" ./configure --host=aarch64-linux-android \
+        --cross-prefix="$CROSS_PREFIX" \
+        --sysroot="$SYSROOT" --enable-static --disable-cli --disable-opencl \
+        --disable-asm \
+        --extra-cflags="-fPIC" --extra-asflags="-fPIC" --prefix="$OUT/x264"
+    make -j"$(nproc)" && make install
+    cd "$WORK/ffmpeg"
+fi
+
 cd "$WORK/ffmpeg"
 
 echo "== Configurando FFmpeg para $ARCH =="
+export PKG_CONFIG_PATH="$OUT/x264/lib/pkgconfig"
 ./configure \
     --prefix="$OUT" \
     --cc="${CROSS_PREFIX}clang" \
@@ -61,18 +84,14 @@ echo "== Configurando FFmpeg para $ARCH =="
     --disable-avdevice \
     --disable-network \
     --disable-debug \
-    --disable-everything \
     --enable-ffmpeg \
     --enable-ffprobe \
-    --enable-demuxer=mov,matroska,mp3,aac,flac,ogg,webm,m4v,mpegts,wav \
-    --enable-muxer=mov,matroska,mp3,aac,flac,ogg,webm,m4v,mpegts,wav \
-    --enable-parser=aac,aac_latm,h264,hevc,mpegaudio,opus,vorbis,flac \
-    --enable-decoder=aac,h264,hevc,mp3,opus,vorbis,flac,rawvideo,pcm_s16le,pcm_s16be \
-    --enable-encoder=aac \
-    --enable-protocol=file \
-    --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb \
+    --enable-gpl \
+    --enable-libx264 \
+    --extra-cflags="-I$OUT/x264/include" \
+    --extra-ldflags="-L$OUT/x264/lib" \
     --enable-pthreads \
-    --pkg-config=false
+    --pkg-config=pkg-config
 
 echo "== Compilando (puede tardar varios minutos) =="
 make -j"$(nproc)"

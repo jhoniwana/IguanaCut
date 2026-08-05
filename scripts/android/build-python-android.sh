@@ -42,7 +42,7 @@ if [ ! -f Makefile ]; then
         --with-openssl="$DIST_DIR/openssl" --with-readline=no \
         CC="$CLANG" AR="$AR" \
         CFLAGS="-O2 -fPIC" \
-        LDFLAGS="-L$DIST_DIR/zlib/lib -L$DIST_DIR/ffi/lib -L$DIST_DIR/bzip2/lib -L$DIST_DIR/lzma/lib" \
+        LDFLAGS="-L$DIST_DIR/zlib/lib -L$DIST_DIR/ffi/lib -L$DIST_DIR/bzip2/lib -L$DIST_DIR/lzma/lib -L$PREFIX/lib -lpython3.12 -Wl,--undefined=__emutls_get_address $NDK/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/18/lib/linux/libclang_rt.builtins-aarch64-android.a" \
         CPPFLAGS="-I$DIST_DIR/zlib/include -I$DIST_DIR/ffi/include -I$DIST_DIR/bzip2/include -I$DIST_DIR/lzma/include" \
         ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no \
         ac_cv_func_wcsftime=no ac_cv_func_ftime=no ac_cv_func_faccessat=no \
@@ -86,6 +86,12 @@ find "$PREFIX/lib/python3.12/lib-dynload" -name "*.so" -exec "$STRIP" {} + 2>/de
 rm -rf "$PREFIX/lib/python3.12/test" "$PREFIX/lib/python3.12/idlelib" \
        "$PREFIX/lib/python3.12/tkinter" "$PREFIX/lib/python3.12/turtledemo"
 
+# aapt2 trata como "ocultos" los directorios cuyo nombre empieza con '_'
+# (no entran al APK). Renombrar zipfile/_path -> path_ y parchear el import:
+# es el unico paquete _* que necesita el runtime (lo usa zipfile en 3.12).
+mv "$PREFIX/lib/python3.12/zipfile/_path" "$PREFIX/lib/python3.12/zipfile/path_"
+sed -i 's/from \._path import/from .path_ import/' "$PREFIX/lib/python3.12/zipfile/__init__.py"
+
 SITE="$PREFIX/lib/python3.12/site-packages"
 mkdir -p "$SITE"
 
@@ -104,6 +110,31 @@ if [ ! -d "$SITE/yt_dlp" ]; then
 fi
 if [ ! -d "$SITE/certifi" ]; then
     unzip -q -o "$SCRIPT_DIR/dl/certifi.whl" -d "$SITE"
+fi
+
+# yt_dlp trae paquetes _builtin (solvers JS de YouTube/POT) que aapt2
+# descarta por el guion bajo inicial: renombrar y parchear los imports.
+for d in "extractor/youtube/jsc/_builtin" "extractor/youtube/pot/_builtin"; do
+    SRC="$SITE/yt_dlp/$d"
+    if [ -d "$SRC" ]; then
+        DST="$(dirname "$SRC")/builtin_"
+        mv "$SRC" "$DST"
+    fi
+done
+find "$SITE/yt_dlp" -name "*.py" -exec sed -i 's/\._builtin/\.builtin_/g' {} +
+
+# qjs: runtime JS que yt-dlp necesita para resolver los retos anti-bot de
+# YouTube (lo busca en <python>/bin). Cross-compile estatico con el NDK.
+if [ ! -x "$PREFIX/bin/qjs" ]; then
+    QJS_DIR="$SCRIPT_DIR/.quickjs-build"
+    if [ ! -f "$QJS_DIR/Makefile" ]; then
+        git clone --depth 1 https://github.com/bellard/quickjs.git "$QJS_DIR"
+    fi
+    (cd "$QJS_DIR" && make CONFIG_CLANG=y \
+        CROSS_PREFIX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-" \
+        LIBS="-lm -ldl" qjs)
+    "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" "$QJS_DIR/qjs"
+    cp "$QJS_DIR/qjs" "$PREFIX/bin/qjs"
 fi
 
 echo ""

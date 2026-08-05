@@ -6,21 +6,22 @@ import { apiClient, Video, TimelineProject, TimelineClip, Operation, CodecCompat
 import SourcePanel, { SourceVideo, getSourceColor } from './SourcePanel';
 import MultiClipTimeline, { getClipAtTime } from './MultiClipTimeline';
 import WatermarkSettings, { WatermarkConfig, getDefaultWatermarkConfig } from './WatermarkSettings';
+import { useIsMobile } from '../hooks/useIsMobile';
 
-// Colors matching VideoEditor.tsx
+// Colors matching VideoEditor.tsx (tema Iguana verde)
 const colors = {
-  bg: '#0a0a0f',
-  surface: '#12121a',
-  card: '#1a1a24',
-  border: '#2a2a3a',
-  primary: '#8B5CF6',
-  secondary: '#A78BFA',
-  accent: '#C084FC',
-  danger: '#ff4466',
+  bg: '#0d1110',
+  surface: '#151b19',
+  card: '#1c2421',
+  border: '#2e3d37',
+  primary: '#0CB691',
+  secondary: '#4FD6B8',
+  accent: '#D1F566',
+  danger: '#f55353',
   text: '#ffffff',
-  textSecondary: '#b0b0c0',
-  textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
+  textSecondary: '#c3cfc9',
+  textMuted: '#7d8f88',
+  gradient: 'linear-gradient(135deg, #089477 0%, #4FD6B8 100%)',
 };
 
 interface Props {
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
+  const isMobile = useIsMobile();
   // Video refs and state
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1086,7 +1088,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
             // Save filename for manual download
             if (status.output_files && status.output_files.length > 0) {
               const filename = status.output_files[0].split('/').pop();
-              setExportedFile(filename);
+              setExportedFile(filename ?? null);
             }
           } else if (status.status === 'failed') {
             if (exportPollRef.current) {
@@ -1132,7 +1134,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
+        height: '100%', // vh roto en el WebView movil; el padre es fixed inset 0
         backgroundColor: colors.bg,
         color: colors.text,
       }}
@@ -1143,7 +1145,9 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 20px',
+          flexWrap: isMobile ? 'wrap' : 'nowrap',
+          rowGap: isMobile ? 8 : 0,
+          padding: isMobile ? '10px 12px' : '12px 20px',
           backgroundColor: colors.surface,
           borderBottom: `1px solid ${colors.border}`,
         }}
@@ -1164,16 +1168,16 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
             Multi-Source Editor
           </h2>
-          {timelineProject && (
+          {!isMobile && timelineProject && (
             <span style={{ fontSize: 12, color: colors.textMuted }}>
               {timelineProject.timeline_clips?.length || 0} clips
             </span>
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           {/* Download progress indicator */}
-          {isDownloading && (
+          {!isMobile && isDownloading && (
             <div
               style={{
                 display: 'flex',
@@ -1217,7 +1221,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: '8px 16px',
+              padding: isMobile ? '6px 10px' : '8px 16px',
               backgroundColor: playbackMode === 'timeline' ? colors.secondary : colors.card,
               color: colors.text,
               border: `1px solid ${playbackMode === 'timeline' ? colors.secondary : colors.border}`,
@@ -1237,7 +1241,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: '8px 12px',
+              padding: isMobile ? '6px 10px' : '8px 12px',
               backgroundColor: watermarkConfig.enabled ? colors.accent : colors.card,
               color: watermarkConfig.enabled ? colors.bg : colors.text,
               border: `1px solid ${watermarkConfig.enabled ? colors.accent : colors.border}`,
@@ -1261,7 +1265,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: '8px 20px',
+              padding: isMobile ? '6px 12px' : '8px 20px',
               background: exportedFile ? colors.surface : colors.gradient,
               color: colors.bg,
               border: `1px solid ${colors.border}`,
@@ -1284,7 +1288,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                padding: '8px 20px',
+                padding: isMobile ? '6px 12px' : '8px 20px',
                 background: colors.gradient,
                 color: colors.bg,
                 border: 'none',
@@ -1308,7 +1312,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
                 border: `1px solid ${colors.border}`,
                 color: colors.textSecondary,
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: isMobile ? '6px 10px' : '8px 12px',
                 borderRadius: 8,
                 fontSize: 12,
               }}

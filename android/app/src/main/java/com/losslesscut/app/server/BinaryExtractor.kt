@@ -13,23 +13,59 @@ object BinaryExtractor {
 
     private const val TAG = "BinaryExtractor"
     private const val NATIVE_DIR = "native"
-    private const val MARKER = ".extracted_v2"
+    private const val MARKER = ".extracted_v11"
 
     // Binarios que deben quedar ejecutables tras la copia (los .so/libs no)
     private val EXECUTABLE_BINS = setOf(
         "server_arm64",
+        "server_x86_64",
         "ffmpeg",
         "ffprobe",
         "python3/bin/python3.12",
+        "python3/bin/qjs",   // runtime JS de yt-dlp (solvers anti-bot de YouTube)
         "yt-dlp",
     )
+
+    // Binario del server segun la ABI (misma logica que ServerManager)
+    private fun serverBinaryName(): String {
+        val abis = android.os.Build.SUPPORTED_ABIS
+        return if (abis.any { it.startsWith("x86_64") }) "server_x86_64" else "server_arm64"
+    }
+
+    /** Compara el inicio del asset con el archivo extraido (detecta builds nuevos). */
+    private fun headMatches(context: Context, assetPath: String, file: File): Boolean {
+        return try {
+            val expected = ByteArray(4096)
+            val actual = ByteArray(4096)
+            val n1 = context.assets.open(assetPath).use { it.read(expected) }
+            val n2 = file.inputStream().use { it.read(actual) }
+            n1 == n2 && expected.copyOf(n1).contentEquals(actual.copyOf(n2))
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun extractNative(context: Context): File {
         val target = File(context.filesDir, NATIVE_DIR)
         val marker = File(target, MARKER)
         if (marker.exists()) {
-            Log.d(TAG, "Binarios ya extraidos en $target")
-            return target
+            // Canarios: si la APK trae un server o ffmpeg distinto (build
+            // nuevo), re-extraer; de lo contrario una reinstalacion seguira
+            // ejecutando los binarios viejos.
+            val serverName = serverBinaryName()
+            val canaries = listOf(
+                Pair("native/$serverName", File(target, serverName)),
+                Pair("native/ffmpeg", File(target, "ffmpeg")),
+                Pair("native/python3/bin/python3.12", File(target, "python3/bin/python3.12")),
+            )
+            val fresh = canaries.all { (assetPath, file) ->
+                file.isFile && headMatches(context, assetPath, file)
+            }
+            if (fresh) {
+                Log.d(TAG, "Binarios ya extraidos en $target")
+                return target
+            }
+            marker.delete()
         }
         target.mkdirs()
 
@@ -62,6 +98,9 @@ object BinaryExtractor {
             export PYTHONHOME="$pythonHome"
             export PYTHONNOUSERSITE=1
             export LD_LIBRARY_PATH="$pythonHome/lib"
+            # qjs (runtime JS anti-bot de YouTube) y ffmpeg/ffprobe (merge
+            # de streams) se buscan por PATH
+            export PATH="$nativeDir:$pythonHome/bin:${'$'}PATH"
             exec "$pyBin" -m yt_dlp "${'$'}@"
         """.trimIndent() + "\n"
 
@@ -78,10 +117,18 @@ object BinaryExtractor {
     fun extractWeb(context: Context): File {
         val target = File(context.filesDir, "backend/web")
         val marker = File(context.filesDir, ".web_extracted_v1")
-        if (marker.exists()) return target
+        // El frontend embebido cambia con cada APK (bundle con hash nuevo).
+        // Si el index.html del assets difiere del extraido, re-extraer:
+        // de lo contrario una reinstalacion seguira sirviendo la web vieja.
+        val indexAsset = context.assets.open("web/index.html").use { it.readBytes() }
+        val indexHash = indexAsset.fold(1) { acc, b -> acc * 31 + b }.toString()
+        if (marker.exists()) {
+            if (marker.readText().trim() == indexHash) return target
+            target.deleteRecursively()
+        }
         target.mkdirs()
         copyTree(context, "web", target)
-        marker.writeText("1")
+        marker.writeText(indexHash)
         return target
     }
 
@@ -92,7 +139,15 @@ object BinaryExtractor {
             val out = File(target, entry)
             if (context.assets.list(assetPath).isNullOrEmpty()) {
                 context.assets.open(assetPath).use { input ->
-                    out.outputStream().use { output -> input.copyTo(output) }
+                    // Copiar a temporal + rename: si el destino esta en ejecucion
+                    // (server), sobrescribirlo lanza ETXTBSY. El rename reemplaza
+                    // la entrada del directorio sin tocar el inode en uso.
+                    val tmp = File(out.parentFile, "${out.name}.tmp${System.nanoTime()}")
+                    tmp.outputStream().use { output -> input.copyTo(output) }
+                    if (!tmp.renameTo(out)) {
+                        out.outputStream().use { output -> tmp.inputStream().use { it.copyTo(output) } }
+                        tmp.delete()
+                    }
                 }
             } else {
                 out.mkdirs()

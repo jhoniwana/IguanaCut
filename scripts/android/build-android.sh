@@ -61,13 +61,22 @@ cd "$REPO_DIR"
 VITE_HIDE_URL_DOWNLOAD="$VITE_HIDE_URL_DOWNLOAD" "$YARN_BIN" "${YARN_ARGS[@]}" build:web
 echo "-> backend/web/ OK"
 
-echo "==================== 2/5 Backend Go (ARM64) ===================="
+echo "==================== 2/5 Backend Go (ARM64 + x86_64) ===================="
 cd "$REPO_DIR/backend"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
-    -ldflags="-s -w" -o /tmp/losslesscut-server-arm64 ./cmd/server
+# GOOS=android + cgo (NDK): el resolver puro de Go hace DNS crudo a
+# 127.0.0.1:53 y en Android moderno (sin dnsproxyd local) falla. Con cgo
+# usa getaddrinfo -> netd -> DNS del sistema (igual que yt-dlp/python).
+NDK_CC_DIR="${ANDROID_HOME:?Define ANDROID_HOME}/ndk/${NDK_VERSION:-27.1.12297006}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$NDK_CC_DIR/aarch64-linux-android28-clang" \
+    go build -trimpath -ldflags="-s -w" -o /tmp/losslesscut-server-arm64 ./cmd/server
+# x86_64 nativo para emuladores/Waydroid (el arm64 bajo traduccion libndk
+# corrompe el heap del GC de Go al procesar uploads grandes)
+CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$NDK_CC_DIR/x86_64-linux-android28-clang" \
+    go build -trimpath -ldflags="-s -w" -o /tmp/losslesscut-server-x86_64 ./cmd/server
 mkdir -p "$ASSETS_NATIVE"
 cp /tmp/losslesscut-server-arm64 "$ASSETS_NATIVE/server_arm64"
-echo "-> server_arm64 OK ($(du -h /tmp/losslesscut-server-arm64 | cut -f1))"
+cp /tmp/losslesscut-server-x86_64 "$ASSETS_NATIVE/server_x86_64"
+echo "-> server_arm64 + server_x86_64 OK"
 
 echo "==================== 3/5 FFmpeg (arm64) ===================="
 "$SCRIPT_DIR/build-ffmpeg-android.sh"

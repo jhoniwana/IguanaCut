@@ -68,6 +68,7 @@ scripts/android/.ffmpeg-build/
 scripts/android/dl/
 scripts/android/python-build/
 scripts/android/python-dist/
+scripts/android/.quickjs-build/
 *.apk
 *.aab
 
@@ -75,3 +76,6 @@ scripts/android/python-dist/
 .codewhale/
 obsidian docs/.obsidian/
 obsidian docs/Untitled.base
+
+# Referencia de diseno local (assets de marca) - no versionar
+iguana/

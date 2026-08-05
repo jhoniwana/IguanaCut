@@ -20,25 +20,34 @@ import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload } 
 import { MdBlurOn } from 'react-icons/md';
 import VideoEditor from './components/VideoEditor';
 import MultiSourceEditor from './components/MultiSourceEditor';
+import { useIsMobile } from './hooks/useIsMobile';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
-// Purple theme
+// La sesion real vive en localStorage (la usa api/client.ts); los fetch
+// directos de esta vista deben mandarla, si no el server filtra a vacio.
+const sessHeaders = (): HeadersInit => ({
+  'X-Session-ID': localStorage.getItem('losslesscut_session_id') || '',
+});
+
+// Tema Iguana: estilo oscuro de la pagina de referencia (contenedores
+// neutros #232326, textos #e1e3ea/#afb1c4, pills 999px) con la paleta
+// verde del logo oficial (verde marca #0CB691, lima #D1F566, teal #095A51).
 const colors = {
-  bg: '#0a0a0f',
-  surface: '#12121a',
-  card: '#1a1a24',
-  border: '#2a2a3a',
-  primary: '#8B5CF6',
-  secondary: '#A78BFA',
-  accent: '#C084FC',
-  danger: '#ff4466',
-  success: '#00FF88',
+  bg: '#0d1110',
+  surface: '#151b19',
+  card: '#1c2421',
+  border: '#2e3d37',
+  primary: '#0CB691',
+  secondary: '#4FD6B8',
+  accent: '#D1F566',
+  danger: '#f55353',
+  success: '#00b784',
   text: '#ffffff',
-  textSecondary: '#b0b0c0',
-  textMuted: '#606070',
-  gradient: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)',
-  gradientAccent: 'linear-gradient(135deg, #A78BFA 0%, #C084FC 100%)',
+  textSecondary: '#c3cfc9',
+  textMuted: '#7d8f88',
+  gradient: 'linear-gradient(135deg, #089477 0%, #4FD6B8 100%)',
+  gradientAccent: 'linear-gradient(135deg, #0CB691 0%, #D1F566 100%)',
 };
 
 // Ocultar la descarga desde URL (se usa en builds para distribucion publica)
@@ -62,6 +71,7 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+  const isMobile = useIsMobile();
   const sessionIdRef = useRef<string>(generateSessionId());
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -121,7 +131,7 @@ export default function App() {
   const loadVideos = async () => {
     setIsLoadingVideos(true);
     try {
-      const res = await fetch('/api/videos');
+      const res = await fetch('/api/videos', { headers: sessHeaders() });
       if (res.ok) {
         const data = await res.json();
         setVideos(data || []);
@@ -136,7 +146,7 @@ export default function App() {
   const deleteVideo = async (id: string) => {
     if (!confirm('¿Eliminar este video?')) return;
     try {
-      await fetch(`/api/videos/${id}`, { method: 'DELETE' });
+      await fetch(`/api/videos/${id}`, { method: 'DELETE', headers: sessHeaders() });
       setVideos(videos.filter(v => v.id !== id));
     } catch (error) {
       console.error('Failed to delete video:', error);
@@ -156,7 +166,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/videos/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...sessHeaders() },
         body: JSON.stringify({ file_name: renameValue.trim() }),
       });
       if (res.ok) {
@@ -184,7 +194,7 @@ export default function App() {
       if (lastVideo) {
         // Verify it still exists
         try {
-          const res = await fetch(`/api/videos`);
+          const res = await fetch(`/api/videos`, { headers: sessHeaders() });
           if (res.ok) {
             const videos = await res.json();
             const found = videos.find((v: any) => v.id === lastVideo);
@@ -198,7 +208,7 @@ export default function App() {
       }
       // Fallback: if there are any videos, open the first one
       try {
-        const res = await fetch('/api/videos');
+        const res = await fetch('/api/videos', { headers: sessHeaders() });
         if (res.ok) {
           const videos = await res.json();
           if (videos.length > 0) {
@@ -216,7 +226,7 @@ export default function App() {
     if (!confirm('¿ELIMINAR TODOS LOS DATOS?\n\n¡Esta acción no se puede deshacer!')) return;
     setIsClearing(true);
     try {
-      await fetch('/api/system/clear-all', { method: 'DELETE' });
+      await fetch('/api/system/clear-all', { method: 'DELETE', headers: sessHeaders() });
       setVideos([]);
     } catch (error: any) {
       alert(`Error: ${error.message}`);
@@ -250,7 +260,7 @@ export default function App() {
     try {
       const res = await fetch('/api/downloads', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...sessHeaders() },
         body: JSON.stringify({ url: downloadUrl.trim() }),
       });
 
@@ -288,7 +298,7 @@ export default function App() {
       }
 
       try {
-        const res = await fetch(`/api/downloads/${id}`);
+        const res = await fetch(`/api/downloads/${id}`, { headers: sessHeaders() });
         if (!res.ok) throw new Error('Failed to get status');
 
         const data = await res.json();
@@ -388,26 +398,18 @@ export default function App() {
       {/* Header */}
       <header style={{
         background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
-        padding: '20px 24px',
+        padding: isMobile ? '12px 16px' : '20px 24px',
         borderBottom: `1px solid ${colors.border}`,
         boxShadow: '0 4px 30px rgba(0, 0, 0, 0.3)',
       }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: colors.gradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '22px',
-              fontWeight: '700',
-              color: '#fff',
-            }}>
-              LC
-            </div>
+            {/* Logo oficial (frasco verde, fondo transparente) */}
+            <img
+              src="/app-logo.png"
+              alt="Video Studio"
+              style={{ height: '38px', width: 'auto', filter: 'drop-shadow(0 0 12px rgba(12, 182, 145, 0.4))' }}
+            />
             <div>
               <h1 style={{
                 margin: 0,
@@ -417,9 +419,11 @@ export default function App() {
               }}>
                 Video Studio
               </h1>
-              <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>
-                Edición profesional sin pérdida
-              </p>
+              {!isMobile && (
+                <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted }}>
+                  Edición profesional sin pérdida
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -440,7 +444,7 @@ export default function App() {
             }}
           >
             <IoMdHelpCircle size={18} color={colors.primary} />
-            ¿Cómo funciona?
+            {!isMobile && '¿Cómo funciona?'}
           </button>
         </div>
       </header>
@@ -452,7 +456,7 @@ export default function App() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '50px 20px',
+        padding: isMobile ? '28px 14px' : '50px 20px',
         maxWidth: '700px',
         margin: '0 auto',
         width: '100%',
@@ -462,30 +466,21 @@ export default function App() {
           <div style={{
             marginBottom: '24px',
             padding: '16px',
-            background: `linear-gradient(145deg, rgba(26, 26, 36, 0.6) 0%, rgba(18, 18, 26, 0.8) 100%)`,
+            background: `linear-gradient(145deg, rgba(28, 36, 33, 0.6) 0%, rgba(21, 27, 25, 0.8) 100%)`,
             borderRadius: '20px',
             display: 'inline-block',
             border: `1px solid ${colors.border}`,
-            boxShadow: `0 8px 40px rgba(139, 92, 246, 0.15)`,
+            boxShadow: `0 8px 40px rgba(12, 182, 145, 0.2)`,
           }}>
-            <div style={{
-              width: '70px',
-              height: '70px',
-              borderRadius: '16px',
-              background: colors.gradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '32px',
-              fontWeight: '700',
-              color: '#fff',
-            }}>
-              LC
-            </div>
+            <img
+              src="/app-logo.png"
+              alt="Video Studio"
+              style={{ height: '56px', width: 'auto', filter: 'drop-shadow(0 0 16px rgba(209, 245, 102, 0.35))' }}
+            />
           </div>
           <h2 style={{
             color: colors.text,
-            fontSize: '26px',
+            fontSize: isMobile ? '21px' : '26px',
             fontWeight: '600',
             marginBottom: '12px',
           }}>
@@ -512,15 +507,15 @@ export default function App() {
           maxWidth: '420px',
         }}>
           <motion.button
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(0, 229, 255, 0.4)' }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(12, 182, 145, 0.4)' }}
             whileTap={{ scale: 0.98 }}
             onClick={() => setShowEditor(true)}
             style={{
               background: colors.gradient,
               color: '#fff',
-              padding: '20px 32px',
+              padding: isMobile ? '16px 24px' : '20px 32px',
               borderRadius: '9999px',
-              fontSize: '17px',
+              fontSize: isMobile ? '16px' : '17px',
               fontWeight: '700',
               border: 'none',
               cursor: 'pointer',
@@ -528,7 +523,7 @@ export default function App() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '12px',
-              boxShadow: '0 6px 25px rgba(0, 229, 255, 0.3)',
+              boxShadow: '0 6px 25px rgba(12, 182, 145, 0.3)',
               transition: 'box-shadow 0.2s ease',
             }}
           >
@@ -537,45 +532,45 @@ export default function App() {
           </motion.button>
 
           {!HIDE_URL_DOWNLOAD && (
-            <motion.button
-              whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 200, 0, 0.4)' }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => {
-                setFileManagerTab('download');
-                setShowFileManager(true);
-              }}
-              style={{
-                background: colors.accent,
-                color: '#000',
-                padding: '20px 32px',
-                borderRadius: '9999px',
-                fontSize: '17px',
-                fontWeight: '700',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                boxShadow: '0 6px 25px rgba(255, 200, 0, 0.3)',
-                transition: 'box-shadow 0.2s ease',
-              }}
-            >
-              <FiLink size={22} />
-              Descargar desde URL
-            </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(209, 245, 102, 0.4)' }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setFileManagerTab('download');
+              setShowFileManager(true);
+            }}
+            style={{
+              background: colors.accent,
+              color: '#000',
+              padding: isMobile ? '16px 24px' : '20px 32px',
+              borderRadius: '9999px',
+              fontSize: isMobile ? '16px' : '17px',
+              fontWeight: '700',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              boxShadow: '0 6px 25px rgba(209, 245, 102, 0.3)',
+              transition: 'box-shadow 0.2s ease',
+            }}
+          >
+            <FiLink size={22} />
+            Descargar desde URL
+          </motion.button>
           )}
 
           <motion.button
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(0, 255, 136, 0.4)' }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(12, 182, 145, 0.4)' }}
             whileTap={{ scale: 0.98 }}
             onClick={() => setShowMultiSourceEditor(true)}
             style={{
-              background: 'linear-gradient(135deg, #00FF88 0%, #00E5FF 100%)',
-              color: '#000',
-              padding: '16px 32px',
+              background: 'linear-gradient(135deg, #089477 0%, #4FD6B8 100%)',
+              color: '#fff',
+              padding: isMobile ? '14px 24px' : '16px 32px',
               borderRadius: '9999px',
-              fontSize: '15px',
+              fontSize: isMobile ? '14px' : '15px',
               fontWeight: '600',
               border: 'none',
               cursor: 'pointer',
@@ -583,7 +578,7 @@ export default function App() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '12px',
-              boxShadow: '0 6px 25px rgba(0, 255, 136, 0.3)',
+              boxShadow: '0 6px 25px rgba(12, 182, 145, 0.3)',
               transition: 'box-shadow 0.2s ease',
             }}
           >
@@ -592,7 +587,7 @@ export default function App() {
           </motion.button>
 
           <motion.button
-            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(255, 20, 138, 0.4)' }}
+            whileHover={{ scale: 1.02, boxShadow: '0 8px 35px rgba(209, 245, 102, 0.4)' }}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
               setFileManagerTab('files');
@@ -602,9 +597,9 @@ export default function App() {
             style={{
               background: colors.gradientAccent,
               color: '#fff',
-              padding: '16px 32px',
+              padding: isMobile ? '14px 24px' : '16px 32px',
               borderRadius: '9999px',
-              fontSize: '15px',
+              fontSize: isMobile ? '14px' : '15px',
               fontWeight: '600',
               border: 'none',
               cursor: 'pointer',
@@ -612,7 +607,7 @@ export default function App() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '12px',
-              boxShadow: '0 6px 25px rgba(255, 20, 138, 0.3)',
+              boxShadow: '0 6px 25px rgba(209, 245, 102, 0.3)',
               transition: 'box-shadow 0.2s ease',
             }}
           >
@@ -623,10 +618,10 @@ export default function App() {
 
         {/* Quick Features */}
         <div style={{
-          marginTop: '50px',
+          marginTop: isMobile ? '32px' : '50px',
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '16px',
+          gap: isMobile ? '10px' : '16px',
           width: '100%',
           maxWidth: '500px',
         }}>
@@ -762,25 +757,30 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '20px',
+              padding: isMobile ? '0' : '20px',
             }}
-            onClick={() => setShowFileManager(false)}
+            // pointerdown (no click): en movil, al tocar un input el teclado
+            // redimensiona la ventana y el click sintetico cae en el backdrop,
+            // cerrando el modal justo cuando el usuario intenta escribir.
+            onPointerDown={() => setShowFileManager(false)}
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+            {/* Tarjeta sin animacion: framer-motion la colapsa a 1px en el WebView movil */}
+            <div
               onClick={e => e.stopPropagation()}
+              // Frenar tambien el pointerdown: sin esto, tocar cualquier
+              // elemento interior (p.ej. el input de URL) burbujea al
+              // backdrop y cierra el modal en movil.
+              onPointerDown={e => e.stopPropagation()}
               style={{
                 background: `linear-gradient(180deg, ${colors.card} 0%, ${colors.surface} 100%)`,
-                borderRadius: '24px',
+                borderRadius: isMobile ? '0' : '24px',
                 padding: '0',
-                maxWidth: '700px',
+                maxWidth: isMobile ? '100%' : '700px',
                 width: '100%',
-                maxHeight: '80vh',
+                maxHeight: isMobile ? '100%' : '620px', // vh roto en el WebView (resuelve a 0)
                 overflow: 'hidden',
-                border: `1px solid ${colors.border}`,
-                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+                border: isMobile ? 'none' : `1px solid ${colors.border}`,
+                boxShadow: isMobile ? 'none' : '0 20px 60px rgba(0, 0, 0, 0.5)',
               }}
             >
               {/* File Manager Header with Tabs */}
@@ -873,7 +873,7 @@ export default function App() {
               {/* Tab Content */}
               <div style={{
                 padding: '16px',
-                maxHeight: '55vh',
+                maxHeight: '430px', // vh roto en el WebView
                 overflowY: 'auto',
               }}>
                 {/* Download Tab */}
@@ -935,7 +935,7 @@ export default function App() {
                           justifyContent: 'center',
                           gap: '10px',
                           opacity: !downloadUrl.trim() ? 0.5 : 1,
-                          boxShadow: isDownloading ? 'none' : '0 4px 20px rgba(0, 229, 255, 0.3)',
+                          boxShadow: isDownloading ? 'none' : '0 4px 20px rgba(12, 182, 145, 0.3)',
                         }}
                       >
                         {isDownloading ? (
@@ -1311,7 +1311,7 @@ export default function App() {
                   </>
                 )}
               </div>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1332,26 +1332,24 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '20px',
+              padding: isMobile ? '0' : '20px',
               overflowY: 'auto',
             }}
             onClick={() => setShowTutorial(false)}
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+            {/* Tarjeta sin animacion (framer-motion la colapsa en movil) */}
+            <div
               onClick={e => e.stopPropagation()}
               style={{
                 background: `linear-gradient(180deg, ${colors.card} 0%, ${colors.surface} 100%)`,
-                borderRadius: '24px',
-                padding: '28px',
-                maxWidth: '600px',
+                borderRadius: isMobile ? '0' : '24px',
+                padding: isMobile ? '24px 18px' : '28px',
+                maxWidth: isMobile ? '100%' : '600px',
                 width: '100%',
-                maxHeight: '90vh',
+                maxHeight: isMobile ? '100%' : '700px', // vh roto en el WebView
                 overflowY: 'auto',
-                border: `1px solid ${colors.border}`,
-                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+                border: isMobile ? 'none' : `1px solid ${colors.border}`,
+                boxShadow: isMobile ? 'none' : '0 20px 60px rgba(0, 0, 0, 0.5)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -1467,12 +1465,12 @@ export default function App() {
                   fontSize: '15px',
                   fontWeight: '700',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 20px rgba(0, 229, 255, 0.3)',
+                  boxShadow: '0 4px 20px rgba(12, 182, 145, 0.3)',
                 }}
               >
                 ¡Entendido!
               </button>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1483,6 +1481,11 @@ export default function App() {
             onClose={() => {
               setShowEditor(false);
               setSelectedVideoId(null);
+            }}
+            onOpenFiles={() => {
+              setFileManagerTab('files');
+              loadVideos();
+              setShowFileManager(true);
             }}
             initialVideoId={selectedVideoId}
           />
