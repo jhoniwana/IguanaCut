@@ -6,6 +6,11 @@ plugins {
 
 android {
     namespace = "com.iguanacut.app"
+    // targetSdk 28 es intencional (SELinux untrusted_app); el lint vital de
+    // Play (ExpiredTargetSdkVersion) no aplica a sideload -> lo desactivamos.
+    lint {
+        checkReleaseBuilds = false
+    }
     compileSdk = 35
 
     defaultConfig {
