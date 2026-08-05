@@ -27,6 +27,13 @@ const colors = {
   shadowDeep: '0 8px 40px rgba(12, 182, 145, 0.22)',
 };
 
+// Deteccion de Android (WebView de la app): la censura de rostros requiere
+// Python+OpenCV del backend de escritorio, no disponible en el APK.
+const IS_ANDROID =
+  typeof window !== 'undefined' &&
+  (/Android/i.test(navigator.userAgent) ||
+    (window as any).AndroidBridge?.platform?.() === 'android');
+
 interface Props {
   onClose: () => void;
   onOpenFiles?: () => void;
@@ -1422,7 +1429,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                       />
                     </div>
 
-                    {/* Blur Section */}
+                    {/* Blur Section: solo escritorio (la censura de rostros
+                        requiere Python/OpenCV, ausente en el APK Android) */}
+                    {!IS_ANDROID && (
                     <div style={{ marginBottom: '16px' }}>
                       <BlurRegionSelector
                         config={blurConfig}
@@ -1436,6 +1445,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                           .map(s => ({ start: s.start, end: s.end! }))}
                       />
                     </div>
+                    )}
 
                     {/* Watermark Section */}
                     <div style={{ marginBottom: '16px' }}>

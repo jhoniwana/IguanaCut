@@ -74,7 +74,11 @@ fun EditorWebView(modifier: Modifier = Modifier) {
                 // los modales ya no dependen de vh (unidades fijas en px).
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
-                settings.cacheMode = WebSettings.LOAD_DEFAULT
+                // Sin cache HTTP: los assets van embebidos en el APK, y la
+                // cache del WebView puede servir el index.html viejo (que
+                // referencia un bundle con hash antiguo) tras reinstalar ->
+                // React no monta y la pantalla queda vacia.
+                settings.cacheMode = WebSettings.LOAD_NO_CACHE
                 setBackgroundColor(Color.parseColor("#0d1117"))
 
                 // Inspeccion remota (chrome://inspect / CDP) en debug

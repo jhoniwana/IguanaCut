@@ -16,11 +16,13 @@ import {
   IoMdCreate,
   IoMdCloudDownload
 } from 'react-icons/io';
-import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload } from 'react-icons/fi';
+import { FiUpload, FiHardDrive, FiFile, FiVideo, FiTrash2, FiLink, FiDownload, FiGithub } from 'react-icons/fi';
 import { MdBlurOn } from 'react-icons/md';
+import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import VideoEditor from './components/VideoEditor';
 import MultiSourceEditor from './components/MultiSourceEditor';
 import { useIsMobile } from './hooks/useIsMobile';
+import { apiClient } from './api/client';
 
 const generateSessionId = () => 'sess_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
@@ -52,6 +54,14 @@ const colors = {
 
 // Ocultar la descarga desde URL (se usa en builds para distribucion publica)
 const HIDE_URL_DOWNLOAD = import.meta.env.VITE_HIDE_URL_DOWNLOAD === '1';
+
+// Deteccion de Android: el WebView expone AndroidBridge y/o el userAgent
+// contiene "Android". La censura de rostros requiere Python+OpenCV del
+// backend de escritorio, no disponible en el APK -> se oculta en Android.
+const IS_ANDROID =
+  typeof window !== 'undefined' &&
+  (/Android/i.test(navigator.userAgent) ||
+    (window as any).AndroidBridge?.platform?.() === 'android');
 
 interface VideoFile {
   id: string;
@@ -85,6 +95,24 @@ export default function App() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [renamingVideoId, setRenamingVideoId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
+
+  // Altura del viewport medida con JS: las unidades vh/dvh se resuelven a
+  // 0px en el WebView Android, asi que la altura fija del layout se calcula
+  // con window.innerHeight (765px en el Pixel 6a) y se reajusta al rotar.
+  const [viewportHeight, setViewportHeight] = useState<number>(
+    typeof window !== 'undefined' ? window.innerHeight : 800
+  );
+  useEffect(() => {
+    const update = () => setViewportHeight(window.innerHeight);
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
 
   useEffect(() => {
     const initSession = async () => {
@@ -189,6 +217,12 @@ export default function App() {
   // Restore last session on mount
   useEffect(() => {
     const restore = async () => {
+      // En Android no se reabre el ultimo archivo: la app debe arrancar
+      // en el home con la gestion de archivos.
+      if (IS_ANDROID) {
+        loadVideos();
+        return;
+      }
       // Try saved video ID first
       const lastVideo = localStorage.getItem('losslesscut_last_video');
       if (lastVideo) {
@@ -236,10 +270,22 @@ export default function App() {
   };
 
   const formatFileSize = (bytes: number) => {
+    if (!bytes || bytes <= 0 || isNaN(bytes)) return '—';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
+  // Formato corto: "MP4", "MKV"... (el campo format del backend puede
+  // traer la lista de extensiones soportadas, no el formato del archivo)
+  const formatShort = (video: VideoFile) => {
+    const raw = (video.format || '').toUpperCase();
+    if (raw.includes(',')) {
+      const ext = video.file_name.split('.').pop()?.toUpperCase();
+      return ext && ext.length <= 5 ? ext : 'VIDEO';
+    }
+    return raw || 'VIDEO';
   };
 
   const formatDuration = (seconds: number) => {
@@ -387,13 +433,349 @@ export default function App() {
     },
   ];
 
+  // Lista de archivos reutilizable: se muestra en el modal (desktop) y
+  // como gestion de archivos del home en Android.
+  const renderVideoList = () => (
+    <>
+                  {/* Refresh button */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      marginBottom: '10px',
+                    }}>
+                      <button
+                        onClick={loadVideos}
+                        disabled={isLoadingVideos}
+                        style={{
+                          background: colors.card,
+                          border: `1px solid ${colors.border}`,
+                          color: colors.textSecondary,
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <IoMdRefresh size={16} style={{
+                          animation: isLoadingVideos ? 'spin 1s linear infinite' : 'none'
+                        }} />
+                        Actualizar
+                      </button>
+                    </div>
+                    {isLoadingVideos ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px',
+                    color: colors.textMuted,
+                  }}>
+                    <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
+                    <p>Cargando archivos...</p>
+                  </div>
+                ) : videos.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '50px 20px',
+                  }}>
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      margin: '0 auto 20px',
+                      background: colors.card,
+                      borderRadius: '20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <IoMdFolder size={40} color={colors.textMuted} />
+                    </div>
+                    <h3 style={{ color: colors.text, margin: '0 0 8px', fontSize: '18px' }}>
+                      No hay archivos
+                    </h3>
+                    <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
+                      Sube un video para comenzar a editar
+                    </p>
+                    <button
+                      onClick={() => {
+                        setShowFileManager(false);
+                        setShowEditor(true);
+                      }}
+                      style={{
+                        marginTop: '20px',
+                        background: colors.gradient,
+                        color: '#fff',
+                        border: 'none',
+                        padding: '12px 24px',
+                        borderRadius: '9999px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <FiUpload size={18} />
+                      Subir Video
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {videos.map((video) => (
+                      <>
+                      <div
+                        key={video.id}
+                        style={{
+                          background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '14px',
+                          padding: '14px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '14px',
+                          transition: 'all 0.2s ease',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => openVideoInEditor(video.id)}
+                      >
+                        {/* Video Thumbnail/Preview */}
+                        <div style={{
+                          width: '56px',
+                          height: '56px',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          flexShrink: 0,
+                          background: colors.card,
+                        }}>
+                          <img
+                            src={apiClient.getThumbnailUrl(video.id)}
+                            alt=""
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        </div>
+
+                        {/* Video Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {renamingVideoId === video.id ? (
+                            <input
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={() => submitRename(video.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') submitRename(video.id);
+                                if (e.key === 'Escape') setRenamingVideoId(null);
+                              }}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                background: colors.bg,
+                                border: `1px solid ${colors.primary}`,
+                                color: colors.text,
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                outline: 'none',
+                                marginBottom: '4px',
+                              }}
+                            />
+                          ) : (
+                            <h4 style={{
+                              margin: '0 0 4px',
+                              color: colors.text,
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {video.file_name}
+                            </h4>
+                          )}
+                          <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            color: colors.textMuted,
+                            fontSize: '12px',
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <IoMdTime size={14} />
+                              {video.duration > 0 ? formatDuration(video.duration) : '--:--'}
+                            </span>
+                            <span>{formatFileSize(video.size)}</span>
+                            <span style={{
+                              background: colors.card,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              color: colors.primary,
+                              fontWeight: '500',
+                            }}>
+                              {formatShort(video)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Boton para expandir/colapsar el menu de acciones */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedVideoId(expandedVideoId === video.id ? null : video.id);
+                          }}
+                          title={expandedVideoId === video.id ? 'Ocultar acciones' : 'Ver acciones'}
+                          aria-expanded={expandedVideoId === video.id}
+                          style={{
+                            background: expandedVideoId === video.id ? colors.primary : 'transparent',
+                            border: `1px solid ${expandedVideoId === video.id ? colors.primary : colors.border}`,
+                            color: expandedVideoId === video.id ? '#000' : colors.textSecondary,
+                            padding: isMobile ? '12px' : '10px',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          {expandedVideoId === video.id ? <FiChevronUp size={18} /> : <FiChevronDown size={18} />}
+                        </button>
+                      </div>
+
+                      {/* Panel de acciones expandible */}
+                      {expandedVideoId === video.id && (
+                        <div style={{
+                          marginTop: '10px',
+                          padding: '14px',
+                          background: colors.bg,
+                          borderRadius: '12px',
+                          border: `1px solid ${colors.border}`,
+                        }}>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '8px',
+                            marginBottom: '12px',
+                          }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openVideoInEditor(video.id);
+                              }}
+                              style={{
+                                background: colors.primary,
+                                border: 'none',
+                                color: '#000',
+                                padding: isMobile ? '14px 8px' : '12px 8px',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '700',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <IoMdCut size={18} />
+                              Editar
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startRename(video.id, video.file_name);
+                              }}
+                              style={{
+                                background: colors.card,
+                                border: `1px solid ${colors.border}`,
+                                color: colors.text,
+                                padding: isMobile ? '14px 8px' : '12px 8px',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <IoMdCreate size={18} />
+                              Renombrar
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteVideo(video.id);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: `1px solid ${colors.danger}`,
+                                color: colors.danger,
+                                padding: isMobile ? '14px 8px' : '12px 8px',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <FiTrash2 size={18} />
+                              Eliminar
+                            </button>
+                          </div>
+
+                          {/* Info del archivo */}
+                          <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px 14px',
+                            color: colors.textMuted,
+                            fontSize: '12px',
+                            paddingTop: '10px',
+                            borderTop: `1px solid ${colors.border}`,
+                          }}>
+                            <span>📁 {formatShort(video)}</span>
+                            <span>⏱ {video.duration > 0 ? formatDuration(video.duration) : '--:--'}</span>
+                            <span>💾 {formatFileSize(video.size)}</span>
+                            <span>🕒 {video.created_at ? new Date(video.created_at).toLocaleDateString() : ''}</span>
+                          </div>
+                        </div>
+                      )}
+                      </>
+                    ))}
+                  </div>
+                )}
+    </>
+  );
+
+
   return (
     <div style={{
       background: `radial-gradient(ellipse at 50% 0%, ${colors.surface} 0%, ${colors.bg} 70%)`,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      minHeight: '100vh',
+      // En movil la altura es fija y el <main> scrollea internamente
+      // (justify-content:center con overflow corta el contenido superior
+      // y el WebView Android no puede hacer scroll hasta el).
+      height: isMobile ? viewportHeight : undefined,
+      minHeight: isMobile ? undefined : '100vh',
       display: 'flex',
       flexDirection: 'column',
+      overflow: 'hidden',
     }}>
       {/* Header */}
       <header style={{
@@ -401,6 +783,7 @@ export default function App() {
         padding: isMobile ? '12px 16px' : '20px 24px',
         borderBottom: `1px solid ${colors.border}`,
         boxShadow: '0 4px 30px rgba(0, 0, 0, 0.3)',
+        flexShrink: 0,
       }}>
         <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -452,15 +835,23 @@ export default function App() {
       {/* Main Content */}
       <main style={{
         flex: 1,
+        minHeight: 0, // permite que overflowY funcione dentro del flex column
+        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: isMobile ? '28px 14px' : '50px 20px',
+        // En movil el contenido fluye desde arriba (scroll natural);
+        // centrar verticalmente corta el overflow en el WebView.
+        justifyContent: isMobile ? 'flex-start' : 'center',
+        padding: isMobile ? '28px 14px 40px' : '50px 20px',
         maxWidth: '700px',
         margin: '0 auto',
         width: '100%',
+        WebkitOverflowScrolling: 'touch',
       }}>
+        {/* Bienvenida + acciones: solo desktop (en Android el home es la
+            gestion de archivos, ver bloque IS_ANDROID abajo) */}
+        {!IS_ANDROID && (<>
         {/* Welcome */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <div style={{
@@ -493,8 +884,9 @@ export default function App() {
             maxWidth: '480px',
             margin: '0 auto',
           }}>
-            Corta, recorta y censura rostros en tus videos sin perder calidad.
-            Simple, rápido y poderoso.
+            {IS_ANDROID
+              ? 'Corta y recorta tus videos sin perder calidad. Simple, rápido y poderoso.'
+              : 'Corta, recorta y censura rostros en tus videos sin perder calidad. Simple, rápido y poderoso.'}
           </p>
         </div>
 
@@ -568,7 +960,7 @@ export default function App() {
             style={{
               background: 'linear-gradient(135deg, #089477 0%, #4FD6B8 100%)',
               color: '#fff',
-              padding: isMobile ? '14px 24px' : '16px 32px',
+              padding: isMobile ? '16px 24px' : '16px 32px',
               borderRadius: '9999px',
               fontSize: isMobile ? '14px' : '15px',
               fontWeight: '600',
@@ -597,7 +989,7 @@ export default function App() {
             style={{
               background: colors.gradientAccent,
               color: '#fff',
-              padding: isMobile ? '14px 24px' : '16px 32px',
+              padding: isMobile ? '16px 24px' : '16px 32px',
               borderRadius: '9999px',
               fontSize: isMobile ? '14px' : '15px',
               fontWeight: '600',
@@ -629,7 +1021,10 @@ export default function App() {
             { icon: <IoMdCut size={24} />, label: 'Corte preciso', color: colors.primary },
             { icon: <MdBlurOn size={24} />, label: 'Censura rostros', color: colors.secondary },
             { icon: <IoMdCheckmarkCircle size={24} />, label: 'Sin pérdida', color: colors.success },
-          ].map((feature, i) => (
+          ]
+            // En Android la censura de rostros no esta disponible (Python/OpenCV)
+            .filter((f) => !(IS_ANDROID && f.label === 'Censura rostros'))
+            .map((feature, i) => (
             <div key={i} style={{
               background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
               border: `1px solid ${colors.border}`,
@@ -646,8 +1041,56 @@ export default function App() {
             </div>
           ))}
         </div>
+        </>)}
 
-        {/* Keyboard Shortcuts */}
+        {/* Gestion de archivos: home principal en Android */}
+        {IS_ANDROID && (
+          <div style={{ width: '100%', maxWidth: '500px' }}>
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowEditor(true)}
+              style={{
+                width: '100%',
+                background: colors.gradient,
+                color: '#fff',
+                padding: '16px 24px',
+                borderRadius: '9999px',
+                fontSize: '16px',
+                fontWeight: '700',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: '0 6px 25px rgba(12, 182, 145, 0.3)',
+                marginBottom: '22px',
+              }}
+            >
+              <IoMdCloudUpload size={24} />
+              Subir Video
+            </motion.button>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '12px',
+            }}>
+              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: colors.text }}>
+                <span style={{ color: colors.primary, marginRight: '8px' }}>◆</span>
+                Mis Archivos
+              </h2>
+              <span style={{ color: colors.textMuted, fontSize: '13px' }}>
+                {videos.length} {videos.length === 1 ? 'video' : 'videos'}
+              </span>
+            </div>
+            {renderVideoList()}
+          </div>
+        )}
+
+        {/* Keyboard Shortcuts: solo desktop (en movil no hay teclado fisico) */}
+        {!isMobile && (
         <div style={{
           marginTop: '40px',
           padding: '20px 24px',
@@ -698,6 +1141,7 @@ export default function App() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Clear Data Button */}
         <button
@@ -723,14 +1167,76 @@ export default function App() {
           <IoMdTrash size={16} />
           {isClearing ? 'Limpiando...' : 'Limpiar todos los datos'}
         </button>
+
+        {/* Creditos del creador */}
+        <div style={{
+          marginTop: '40px',
+          width: '100%',
+          maxWidth: '420px',
+          background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '16px',
+          padding: '18px 20px',
+          textAlign: 'center',
+        }}>
+          <img
+            src="/app-logo.png"
+            alt="Video Studio"
+            style={{ height: '36px', width: 'auto', marginBottom: '10px', filter: 'drop-shadow(0 0 10px rgba(12, 182, 145, 0.35))' }}
+          />
+          <div style={{ color: colors.text, fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+            Video Studio
+          </div>
+          <div style={{ color: colors.textMuted, fontSize: '12px', marginBottom: '14px' }}>
+            Creado por <span style={{ color: colors.secondary, fontWeight: '600' }}>Jhon Escorcia</span>
+            {' '}· v1.0.0
+          </div>
+          <a
+            href="https://github.com/jhoniwana/losslesscut-web"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: colors.bg,
+              border: `1px solid ${colors.border}`,
+              color: colors.text,
+              padding: isMobile ? '12px 20px' : '10px 18px',
+              borderRadius: '9999px',
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '600',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <FiGithub size={18} color={colors.primary} />
+            github.com/jhoniwana/losslesscut-web
+          </a>
+          <div style={{
+            marginTop: '14px',
+            color: colors.textMuted,
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}>
+            <span>⚡ Powered by</span>
+            <span style={{ color: colors.primary, fontWeight: '600' }}>FFmpeg</span>
+            <span>·</span>
+            <span>🦎 Iguana Edition</span>
+          </div>
+        </div>
       </main>
 
-      {/* Footer */}
-      <footer style={{
+      {/* Footer: solo desktop (en movil ahorra espacio vertical) */}
+      {!isMobile && <footer style={{
         borderTop: `1px solid ${colors.border}`,
         padding: '16px',
         textAlign: 'center',
         background: colors.surface,
+        flexShrink: 0,
       }}>
         <p style={{
           color: colors.textMuted,
@@ -739,7 +1245,7 @@ export default function App() {
         }}>
           Powered by <span style={{ color: colors.primary }}>FFmpeg</span>
         </p>
-      </footer>
+      </footer>}
 
       {/* File Manager Modal */}
       <AnimatePresence>
@@ -1050,266 +1556,7 @@ export default function App() {
                 )}
 
                 {/* Files Tab */}
-                {fileManagerTab === 'files' && (
-                  <>
-                    {/* Refresh button */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                      marginBottom: '10px',
-                    }}>
-                      <button
-                        onClick={loadVideos}
-                        disabled={isLoadingVideos}
-                        style={{
-                          background: colors.card,
-                          border: `1px solid ${colors.border}`,
-                          color: colors.textSecondary,
-                          padding: '8px 14px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <IoMdRefresh size={16} style={{
-                          animation: isLoadingVideos ? 'spin 1s linear infinite' : 'none'
-                        }} />
-                        Actualizar
-                      </button>
-                    </div>
-                    {isLoadingVideos ? (
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '40px',
-                    color: colors.textMuted,
-                  }}>
-                    <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
-                    <p>Cargando archivos...</p>
-                  </div>
-                ) : videos.length === 0 ? (
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '50px 20px',
-                  }}>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      margin: '0 auto 20px',
-                      background: colors.card,
-                      borderRadius: '20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <IoMdFolder size={40} color={colors.textMuted} />
-                    </div>
-                    <h3 style={{ color: colors.text, margin: '0 0 8px', fontSize: '18px' }}>
-                      No hay archivos
-                    </h3>
-                    <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
-                      Sube un video para comenzar a editar
-                    </p>
-                    <button
-                      onClick={() => {
-                        setShowFileManager(false);
-                        setShowEditor(true);
-                      }}
-                      style={{
-                        marginTop: '20px',
-                        background: colors.gradient,
-                        color: '#fff',
-                        border: 'none',
-                        padding: '12px 24px',
-                        borderRadius: '9999px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <FiUpload size={18} />
-                      Subir Video
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {videos.map((video) => (
-                      <div
-                        key={video.id}
-                        style={{
-                          background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
-                          border: `1px solid ${colors.border}`,
-                          borderRadius: '14px',
-                          padding: '14px 16px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '14px',
-                          transition: 'all 0.2s ease',
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => openVideoInEditor(video.id)}
-                      >
-                        {/* Video Thumbnail/Preview */}
-                        <div style={{
-                          width: '56px',
-                          height: '56px',
-                          borderRadius: '12px',
-                          overflow: 'hidden',
-                          flexShrink: 0,
-                          background: colors.card,
-                        }}>
-                          <img
-                            src={`/api/videos/${video.id}/thumbnail`}
-                            alt=""
-                            loading="lazy"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        </div>
-
-                        {/* Video Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {renamingVideoId === video.id ? (
-                            <input
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              onBlur={() => submitRename(video.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') submitRename(video.id);
-                                if (e.key === 'Escape') setRenamingVideoId(null);
-                              }}
-                              autoFocus
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                background: colors.bg,
-                                border: `1px solid ${colors.primary}`,
-                                color: colors.text,
-                                padding: '4px 8px',
-                                borderRadius: '6px',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                                outline: 'none',
-                                marginBottom: '4px',
-                              }}
-                            />
-                          ) : (
-                            <h4 style={{
-                              margin: '0 0 4px',
-                              color: colors.text,
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}>
-                              {video.file_name}
-                            </h4>
-                          )}
-                          <div style={{
-                            display: 'flex',
-                            gap: '12px',
-                            color: colors.textMuted,
-                            fontSize: '12px',
-                          }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <IoMdTime size={14} />
-                              {video.duration > 0 ? formatDuration(video.duration) : '--:--'}
-                            </span>
-                            <span>{formatFileSize(video.size)}</span>
-                            <span style={{
-                              background: colors.card,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              color: colors.primary,
-                              fontWeight: '500',
-                            }}>
-                              {video.format?.toUpperCase() || 'VIDEO'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startRename(video.id, video.file_name);
-                            }}
-                            title="Renombrar"
-                            style={{
-                              background: 'transparent',
-                              border: `1px solid ${colors.border}`,
-                              color: colors.textSecondary,
-                              padding: '8px',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                            }}
-                          >
-                            <IoMdCreate size={14} />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openVideoInEditor(video.id);
-                            }}
-                            style={{
-                              background: colors.primary,
-                              border: 'none',
-                              color: '#000',
-                              padding: '8px 14px',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <IoMdCut size={14} />
-                            Editar
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteVideo(video.id);
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: `1px solid ${colors.danger}`,
-                              color: colors.danger,
-                              padding: '8px',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                            }}
-                            title="Eliminar"
-                          >
-                            <FiTrash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                  </>
-                )}
+                {fileManagerTab === 'files' && renderVideoList()}
               </div>
             </div>
           </motion.div>
@@ -1389,7 +1636,11 @@ export default function App() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {tutorialSteps.map((step) => (
+                {tutorialSteps
+                  // En Android la censura de rostros no esta disponible
+                  .filter((s) => !(IS_ANDROID && s.title === 'Censura rostros'))
+                  .map((s, idx) => ({ ...s, step: idx + 1 }))
+                  .map((step) => (
                   <div
                     key={step.step}
                     style={{
