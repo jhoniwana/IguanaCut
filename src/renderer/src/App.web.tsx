@@ -1585,7 +1585,12 @@ export default function App() {
                   padding: '0 16px 12px',
                 }}>
                   <button
-                    onClick={() => setFileManagerTab('files')}
+                    onClick={() => {
+                      setFileManagerTab('files');
+                      // Al volver a la lista, traer archivos y cortes nuevos.
+                      loadVideos();
+                      loadOutputs();
+                    }}
                     style={{
                       flex: 1,
                       background: fileManagerTab === 'files' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
@@ -2086,10 +2091,14 @@ export default function App() {
             onClose={() => {
               setShowEditor(false);
               setSelectedVideoId(null);
+              // Refrescar la lista al volver: el usuario acaba de exportar.
+              loadVideos();
+              loadOutputs();
             }}
             onOpenFiles={() => {
               setFileManagerTab('files');
               loadVideos();
+              loadOutputs();
               setShowFileManager(true);
             }}
             initialVideoId={selectedVideoId}
@@ -2110,7 +2119,11 @@ export default function App() {
             }}
           >
             <MultiSourceEditor
-              onClose={() => setShowMultiSourceEditor(false)}
+              onClose={() => {
+                setShowMultiSourceEditor(false);
+                loadVideos();
+                loadOutputs();
+              }}
               initialVideoId={null}
             />
           </motion.div>
