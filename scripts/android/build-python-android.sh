@@ -73,10 +73,10 @@ sed -i 's/^MODULE__UUID_STATE=yes$/MODULE__UUID_STATE=disabled/; s/^MODULE__UUID
 sed -i '448s/\b\(Modules\/nis\|Modules\/_uuid\|Modules\/_xxtestfuzz\|Modules\/_testbuffer\|Modules\/_testcapi\|Modules\/_testclinic\|Modules\/_testimportmultiple\|Modules\/_testinternalcapi\|Modules\/_testmultiphase\|Modules\/_testsinglephase\|Modules\/_ctypes_test\|Modules\/xxlimited_35\|Modules\/xxlimited\)\$(EXT_SUFFIX)//g; 448s/  */ /g' Makefile
 # _posixshmem: bionic no implementa shm_open/shm_unlink (sin header en NDK)
 sed -i '24,25s/ _posixshmem//g; 448s/Modules\/_posixshmem\$(EXT_SUFFIX)//g; 24,25s/  */ /g; 448s/  */ /g' Makefile
-make -j"$(nproc)"
+make -o Makefile -j"$(nproc)"
 
 echo "== make install (prefix $PREFIX) =="
-make install
+make -o Makefile install
 
 # Optimizacion de tamano: strip de binarios/.so y limpieza de lo que no
 # existe en Android (Tk/test suite). 295MB -> ~126MB.
@@ -89,7 +89,10 @@ rm -rf "$PREFIX/lib/python3.12/test" "$PREFIX/lib/python3.12/idlelib" \
 # aapt2 trata como "ocultos" los directorios cuyo nombre empieza con '_'
 # (no entran al APK). Renombrar zipfile/_path -> path_ y parchear el import:
 # es el unico paquete _* que necesita el runtime (lo usa zipfile en 3.12).
+if [ -d "$PREFIX/lib/python3.12/zipfile/_path" ]; then
+rm -rf "$PREFIX/lib/python3.12/zipfile/path_"
 mv "$PREFIX/lib/python3.12/zipfile/_path" "$PREFIX/lib/python3.12/zipfile/path_"
+fi
 sed -i 's/from \._path import/from .path_ import/' "$PREFIX/lib/python3.12/zipfile/__init__.py"
 
 SITE="$PREFIX/lib/python3.12/site-packages"
