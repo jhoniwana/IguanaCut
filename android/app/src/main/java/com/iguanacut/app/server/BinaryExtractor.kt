@@ -56,7 +56,13 @@ object BinaryExtractor {
             val canaries = listOf(
                 Pair("native/$serverName", File(target, serverName)),
                 Pair("native/ffmpeg", File(target, "ffmpeg")),
+                // Python: vigilar binario + libpython + un modulo (ABI).
+                // Si cualquiera cambia hay que re-extraer TODO el arbol;
+                // de lo contrario quedan libpython viejas con modulos nuevos
+                // y yt-dlp muere con "cannot locate symbol _Py_NoneStruct".
                 Pair("native/python3/bin/python3.12", File(target, "python3/bin/python3.12")),
+                Pair("native/python3/lib/libpython3.12.so.1.0", File(target, "python3/lib/libpython3.12.so.1.0")),
+                Pair("native/python3/lib/python3.12/lib-dynload/_struct.cpython-312.so", File(target, "python3/lib/python3.12/lib-dynload/_struct.cpython-312.so")),
             )
             val fresh = canaries.all { (assetPath, file) ->
                 file.isFile && headMatches(context, assetPath, file)
@@ -66,6 +72,9 @@ object BinaryExtractor {
                 return target
             }
             marker.delete()
+            // Re-extraccion limpia: borrar el arbol viejo para no mezclar
+            // binarios de builds distintos.
+            target.deleteRecursively()
         }
         target.mkdirs()
 
