@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
+import { IoMdPlay, IoMdPause, IoMdTrash, IoMdDownload, IoMdCloudDownload, IoMdSkipForward, IoMdSkipBackward, IoMdCheckmark, IoMdClose, IoMdHelpCircle, IoMdCamera, IoMdImages, IoMdList, IoMdArrowForward, IoMdArrowBack, IoMdCreate, IoMdReorder } from 'react-icons/io';
 import { FiUpload, FiScissors, FiChevronRight, FiChevronLeft, FiEdit2, FiCrop, FiMove, FiImage, FiFolder } from 'react-icons/fi';
 import { MdContentCut, MdPlaylistPlay, MdEdit, MdBlurOn } from 'react-icons/md';
 import { apiClient, Project, Segment, Operation } from '../api/client';
@@ -984,13 +984,17 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
     };
   }, [isPreviewMode, currentPreviewSegmentIndex, segments, duration]);
 
+  // Descarga un archivo exportado (escritorio; en Android el anchor no
+  // descarga nada en el WebView, se usan los bridges play/saveToGallery).
+  const downloadOutputFile = (name: string) => {
+    const a = document.createElement('a');
+    a.href = `/api/outputs/${name.split('/').pop()}`;
+    a.download = name.split('/').pop() || 'video.mp4';
+    a.click();
+  };
+
   const handleDownload = () => {
-    currentOperation?.output_files?.forEach((file: string) => {
-      const a = document.createElement('a');
-      a.href = `/api/outputs/${file.split('/').pop()}`;
-      a.download = file.split('/').pop() || 'video.mp4';
-      a.click();
-    });
+    currentOperation?.output_files?.forEach((file: string) => downloadOutputFile(file));
   };
 
   const handleScreenshot = async () => {
@@ -2488,30 +2492,78 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                       </>
                     )}
                     {currentOperation?.status === 'completed' && (
-                      <button
-                        onClick={handleDownload}
-                        style={{
-                          width: '100%',
-                          marginTop: '8px',
-                          background: colors.gradientAccent,
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '10px',
-                          padding: '12px 16px',
-                          fontSize: '13px',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 4px 15px rgba(209, 245, 102, 0.25)',
-                          animation: 'pulse 2s infinite',
-                        }}
-                      >
-                        <IoMdDownload size={16} />
-                        Download
-                      </button>
+                      <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: colors.textSecondary }}>
+                          ✅ Export complete
+                        </div>
+                        {currentOperation.output_files?.map((file) => {
+                          const name = file.split('/').pop() || file;
+                          const bridge = (window as any).AndroidBridge;
+                          // Reproducir: reproductor del sistema en Android
+                          // (bridge.openVideo) o pestana nueva en escritorio.
+                          const playFile = () => {
+                            if (bridge?.openVideo) {
+                              bridge.openVideo(name);
+                            } else {
+                              window.open(`/api/outputs/${name}`, '_blank');
+                            }
+                          };
+                          // Guardar en la galeria del telefono (MediaStore ->
+                          // Photos). En escritorio cae en downloadOutputFile.
+                          const saveToGalleryFile = () => {
+                            if (bridge?.saveToGallery) {
+                              const res = bridge.saveToGallery(name);
+                              try {
+                                const r = JSON.parse(res || '{}');
+                                showToast(
+                                  r.ok ? `Saved to gallery: ${name}` : `Error: ${r.error}`,
+                                  r.ok ? 'success' : 'error',
+                                );
+                              } catch {
+                                showToast(`Saved to gallery: ${name}`, 'success');
+                              }
+                            } else {
+                              downloadOutputFile(name);
+                            }
+                          };
+                          return (
+                            <div key={file} style={{
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              background: colors.card, borderRadius: '8px', padding: '6px 8px',
+                            }}>
+                              <span style={{
+                                flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap', fontSize: '12px', color: colors.text,
+                              }} title={name}>
+                                {name}
+                              </span>
+                              <button onClick={playFile} title="Play" style={{
+                                background: colors.primary, border: 'none', color: '#000',
+                                width: '30px', height: '30px', borderRadius: '7px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                              }}>
+                                <IoMdPlay size={15} />
+                              </button>
+                              <button onClick={saveToGalleryFile} title="Save to gallery" style={{
+                                background: colors.card, border: `1px solid ${colors.border}`, color: colors.text,
+                                width: '30px', height: '30px', borderRadius: '7px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                              }}>
+                                <IoMdCloudDownload size={14} />
+                              </button>
+                              {!IS_ANDROID && (
+                                <button onClick={() => downloadOutputFile(name)} title="Download" style={{
+                                  background: colors.card, border: `1px solid ${colors.border}`, color: colors.primary,
+                                  width: '30px', height: '30px', borderRadius: '7px', cursor: 'pointer',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                }}>
+                                  <IoMdDownload size={14} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
