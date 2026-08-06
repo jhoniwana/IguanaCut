@@ -216,6 +216,22 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			logger.Info("Serving output file", zap.String("filename", filename))
 			c.File(filepath)
 		})
+
+		// Preview frame (thumbnail cacheado) de un archivo exportado, para
+		// la galeria de exportaciones (padre-hijo con el video de origen).
+		api.GET("/outputs/:filename/thumbnail", func(c *gin.Context) {
+			filename := filepath.Base(c.Param("filename"))
+			thumbPath := services.Storage.GetOutputThumbnailPath(filename)
+
+			if !services.Storage.FileExists(thumbPath) {
+				c.Status(404)
+				return
+			}
+
+			c.Header("Cache-Control", "public, max-age=86400") // Cache for 1 day
+			c.Header("X-Content-Type-Options", "nosniff")
+			c.File(thumbPath)
+		})
 	}
 
 	// Serve frontend static files (absolute path)

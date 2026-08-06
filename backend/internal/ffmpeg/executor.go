@@ -511,6 +511,23 @@ func (e *Executor) CaptureSnapshot(ctx context.Context, input, output string, ti
 	return e.Execute(ctx, ExecuteOptions{Args: args})
 }
 
+// GenerateThumbnail extracts a small preview frame of a video (for the
+// exports gallery). Output is a small JPEG cached next to the output file.
+func (e *Executor) GenerateThumbnail(ctx context.Context, input, output string, timestamp float64) error {
+	args := []string{
+		"-hide_banner",
+		"-ss", fmt.Sprintf("%.3f", timestamp),
+		"-i", input,
+		"-frames:v", "1",
+		"-vf", "scale=320:-2",
+		"-q:v", "5",
+		"-y",
+		output,
+	}
+
+	return e.Execute(ctx, ExecuteOptions{Args: args})
+}
+
 // ExtractAudio extracts audio track from video
 func (e *Executor) ExtractAudio(ctx context.Context, input, output string, duration float64, onProgress ProgressCallback) error {
 	args := []string{

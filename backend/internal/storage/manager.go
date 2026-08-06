@@ -212,6 +212,11 @@ func (m *Manager) ListOutputs() ([]models.OutputFile, error) {
 		if e.IsDir() {
 			continue
 		}
+		// Los previews temporales no son exportaciones: excluirlos para
+		// que no aparezcan sueltos (sin vinculo) en la galeria.
+		if strings.HasPrefix(e.Name(), "preview_") {
+			continue
+		}
 		info, err := e.Info()
 		if err != nil {
 			continue
@@ -276,6 +281,16 @@ func (m *Manager) saveOutputsIndex(idx outputsIndexFile) error {
 // GetOutputPath returns the full path for an output file
 func (m *Manager) GetOutputPath(filename string) string {
 	return filepath.Join(m.OutputsDir(), filename)
+}
+
+// ThumbnailsDir returns the directory with cached preview frames of outputs.
+func (m *Manager) ThumbnailsDir() string {
+	return filepath.Join(m.BasePath(), "thumbnails")
+}
+
+// GetOutputThumbnailPath returns the cached preview path for an output file.
+func (m *Manager) GetOutputThumbnailPath(fileName string) string {
+	return filepath.Join(m.ThumbnailsDir(), fileName+".jpg")
 }
 
 // GetTempPath returns a temp file path

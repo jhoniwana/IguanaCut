@@ -306,6 +306,13 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		if err := s.storage.RegisterOutput(filepath.Base(f), project.VideoID); err != nil {
 			s.logger.Warn("Failed to index output", zap.String("file", f), zap.Error(err))
 		}
+		// Preview frame para la galeria de exportaciones (cacheado).
+		thumbPath := s.storage.GetOutputThumbnailPath(filepath.Base(f))
+		if !s.storage.FileExists(thumbPath) {
+			if err := s.ffmpeg.GenerateThumbnail(ctx, f, thumbPath, 1.0); err != nil {
+				s.logger.Warn("Failed to generate output thumbnail", zap.String("file", f), zap.Error(err))
+			}
+		}
 	}
 
 	s.logger.Info("Export completed",
@@ -1086,6 +1093,20 @@ func (s *OperationService) runTimelineExport(operation *models.Operation, projec
 	operation.Progress = 100
 	operation.CompletedAt = &now
 	operation.OutputFiles = []string{outputPath}
+
+	// Vincular el export de timeline al primer video fuente (padre-hijo en
+	// la galeria) y generar su preview frame.
+	if len(project.VideoIDs) > 0 {
+		if err := s.storage.RegisterOutput(filepath.Base(outputPath), project.VideoIDs[0]); err != nil {
+			s.logger.Warn("Cannot register timeline output", zap.String("output", outputPath), zap.Error(err))
+		}
+	}
+	thumbPath := s.storage.GetOutputThumbnailPath(filepath.Base(outputPath))
+	if !s.storage.FileExists(thumbPath) {
+		if err := s.ffmpeg.GenerateThumbnail(ctx, outputPath, thumbPath, 1.0); err != nil {
+			s.logger.Warn("Failed to generate timeline thumbnail", zap.String("output", outputPath), zap.Error(err))
+		}
+	}
 
 	s.logger.Info("Timeline export completed",
 		zap.String("operationId", operation.ID),

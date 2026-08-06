@@ -531,6 +531,74 @@ export default function App() {
 
   // Lista de archivos reutilizable: se muestra en el modal (desktop) y
   // como gestion de archivos del home en Android.
+  // Fila de un archivo exportado (corte): preview frame, nombre y
+  // acciones (Play / Share / Save to gallery / Delete).
+  const renderCutRow = (cut: OutputFile) => (
+    <div key={cut.file_name} style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      background: colors.surface,
+      borderRadius: '6px',
+      padding: '4px 8px',
+    }}>
+      <img
+        src={`/api/outputs/${encodeURIComponent(cut.file_name)}/thumbnail`}
+        alt=""
+        loading="lazy"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        style={{
+          width: '48px', height: '28px', borderRadius: '4px',
+          objectFit: 'cover', background: colors.card, flexShrink: 0,
+        }}
+      />
+      <span style={{
+        flex: 1,
+        minWidth: 0,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontSize: '11px',
+        color: colors.text,
+      }}>
+        {cut.file_name}
+      </span>
+      <span style={{ fontSize: '10px', color: colors.textMuted, flexShrink: 0 }}>
+        {formatFileSize(cut.size)}
+      </span>
+      <button onClick={() => playOutput(cut.file_name)} title="Play" style={{
+        background: colors.primary, border: 'none', color: '#000',
+        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <IoMdPlay size={13} />
+      </button>
+      <button onClick={() => shareOutput(cut.file_name)} title="Share" style={{
+        background: colors.card, border: `1px solid ${colors.border}`, color: colors.primary,
+        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <FiShare2 size={12} />
+      </button>
+      {IS_ANDROID && (
+      <button onClick={() => saveToGallery(cut.file_name)} title="Save to gallery" style={{
+        background: colors.card, border: `1px solid ${colors.border}`, color: colors.text,
+        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <IoMdCloudDownload size={12} />
+      </button>
+      )}
+      <button onClick={() => deleteOutput(cut.file_name)} title="Delete" style={{
+        background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger,
+        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <FiTrash2 size={12} />
+      </button>
+    </div>
+  );
+
   const renderVideoList = () => (
     <>
                   {/* Refresh button */}
@@ -773,61 +841,7 @@ export default function App() {
                                   ✂️ Cuts ({cuts.length})
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                  {cuts.map((cut) => (
-                                    <div key={cut.file_name} style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      background: colors.surface,
-                                      borderRadius: '6px',
-                                      padding: '4px 8px',
-                                    }}>
-                                      <span style={{
-                                        flex: 1,
-                                        minWidth: 0,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        fontSize: '11px',
-                                        color: colors.text,
-                                      }}>
-                                        {cut.file_name}
-                                      </span>
-                                      <span style={{ fontSize: '10px', color: colors.textMuted, flexShrink: 0 }}>
-                                        {formatFileSize(cut.size)}
-                                      </span>
-                                      <button onClick={() => playOutput(cut.file_name)} title="Play" style={{
-                                        background: colors.primary, border: 'none', color: '#000',
-                                        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                      }}>
-                                        <IoMdPlay size={13} />
-                                      </button>
-                                      <button onClick={() => shareOutput(cut.file_name)} title="Share" style={{
-                                        background: colors.card, border: `1px solid ${colors.border}`, color: colors.primary,
-                                        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                      }}>
-                                        <FiShare2 size={12} />
-                                      </button>
-                                      {IS_ANDROID && (
-                                      <button onClick={() => saveToGallery(cut.file_name)} title="Save to gallery" style={{
-                                        background: colors.card, border: `1px solid ${colors.border}`, color: colors.text,
-                                        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                      }}>
-                                        <IoMdCloudDownload size={12} />
-                                      </button>
-                                      )}
-                                      <button onClick={() => deleteOutput(cut.file_name)} title="Delete" style={{
-                                        background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger,
-                                        width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                      }}>
-                                        <FiTrash2 size={12} />
-                                      </button>
-                                    </div>
-                                  ))}
+                                  {cuts.map((cut) => renderCutRow(cut))}
                                 </div>
                               </div>
                             );
@@ -938,6 +952,27 @@ export default function App() {
                       )}
                       </>
                     ))}
+                    {(() => {
+                      const knownIds = new Set(videos.map((v) => v.id));
+                      const orphans = outputs.filter((o) => !o.video_id || !knownIds.has(o.video_id));
+                      if (orphans.length === 0) return null;
+                      return (
+                        <div style={{
+                          marginTop: '4px',
+                          padding: '10px',
+                          background: colors.card,
+                          borderRadius: '12px',
+                          border: `1px dashed ${colors.border}`,
+                        }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: colors.textMuted, marginBottom: '6px' }}>
+                            ⚠️ Exports sin archivo vinculado ({orphans.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            {orphans.map((cut) => renderCutRow(cut))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
     </>

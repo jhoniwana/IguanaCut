@@ -2531,6 +2531,16 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                               display: 'flex', alignItems: 'center', gap: '6px',
                               background: colors.card, borderRadius: '8px', padding: '6px 8px',
                             }}>
+                              <img
+                                src={`/api/outputs/${encodeURIComponent(name)}/thumbnail`}
+                                alt=""
+                                loading="lazy"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                style={{
+                                  width: '52px', height: '30px', borderRadius: '5px',
+                                  objectFit: 'cover', background: colors.surface, flexShrink: 0,
+                                }}
+                              />
                               <span style={{
                                 flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap', fontSize: '12px', color: colors.text,
