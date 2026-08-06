@@ -439,7 +439,10 @@ export default function App() {
 
         const data = await res.json();
         const progress = data.progress || 0;
-        setDownloadProgress(progress);
+        // El progreso nunca retrocede: entre fases (resolviendo ->
+        // descargando -> procesando) el backend puede reportar 0 y la barra
+        // parecia "muerta" hasta el salto final.
+        setDownloadProgress((prev) => Math.max(prev, progress));
 
         // Better status text
         if (data.status === 'downloading') {
@@ -1765,14 +1768,20 @@ export default function App() {
                           <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
                             {downloadStatus}
                           </span>
-                          <span style={{
-                            color: colors.primary,
-                            fontSize: '14px',
-                            fontWeight: '700',
-                            fontFamily: 'monospace',
-                          }}>
-                            {downloadProgress.toFixed(1)}%
-                          </span>
+                          {downloadProgress > 0 ? (
+                            <span style={{
+                              color: colors.primary,
+                              fontSize: '14px',
+                              fontWeight: '700',
+                              fontFamily: 'monospace',
+                            }}>
+                              {downloadProgress.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span style={{ color: colors.textMuted, fontSize: '12px', fontStyle: 'italic' }}>
+                              Working...
+                            </span>
+                          )}
                         </div>
                         <div style={{
                           width: '100%',
@@ -1781,13 +1790,25 @@ export default function App() {
                           borderRadius: '4px',
                           overflow: 'hidden',
                         }}>
-                          <div style={{
-                            width: `${downloadProgress}%`,
-                            height: '100%',
-                            background: colors.gradient,
-                            borderRadius: '4px',
-                            transition: 'width 0.3s ease',
-                          }} />
+                          {downloadProgress > 0 ? (
+                            <div style={{
+                              width: `${downloadProgress}%`,
+                              height: '100%',
+                              background: colors.gradient,
+                              borderRadius: '4px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          ) : (
+                            // Indeterminada mientras resuelve la URL o la
+                            // descarga no reporta %: la barra no parece colgada.
+                            <div style={{
+                              width: '35%',
+                              height: '100%',
+                              background: colors.gradient,
+                              borderRadius: '4px',
+                              animation: 'indeterminate 1.1s infinite ease-in-out',
+                            }} />
+                          )}
                         </div>
                       </div>
                     )}
@@ -2135,6 +2156,10 @@ export default function App() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes indeterminate {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(350%); }
         }
       `}</style>
     </div>

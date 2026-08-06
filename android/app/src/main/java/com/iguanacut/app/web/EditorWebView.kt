@@ -6,9 +6,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.app.DownloadManager
-import android.provider.MediaStore
-import android.os.Build
 import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
 import android.os.Environment
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -51,6 +51,11 @@ class AndroidBridge(private val context: Context) {
             .toString()
     }
 
+    /**
+     * Comparte un archivo exportado (cortes) via el chooser de Android.
+     * El archivo debe existir en filesDir/storage/outputs (donde el server
+     * Go interno guarda las exportaciones).
+     */
     @JavascriptInterface
     fun shareFile(fileName: String): String {
         return try {
@@ -165,6 +170,11 @@ fun EditorWebView(modifier: Modifier = Modifier) {
                 // los modales ya no dependen de vh (unidades fijas en px).
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
+                // Sin zoom: el pinch accidental agranda la UI y deja fuera
+                // el header (boton de volver a home).
+                settings.setSupportZoom(false)
+                settings.builtInZoomControls = false
+                settings.displayZoomControls = false
                 // Sin cache HTTP: los assets van embebidos en el APK, y la
                 // cache del WebView puede servir el index.html viejo (que
                 // referencia un bundle con hash antiguo) tras reinstalar ->

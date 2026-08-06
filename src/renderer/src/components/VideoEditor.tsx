@@ -1177,6 +1177,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
       {/* Header */}
       <header style={{
         background: `linear-gradient(180deg, ${colors.surface} 0%, ${colors.bg} 100%)`,
+        // El header (con el boton de volver a home) nunca se encoge ni se
+        // sale de pantalla cuando el panel de exportacion crece.
+        flexShrink: 0,
         padding: isMobile ? '8px 12px' : '16px 24px',
         display: 'flex',
         justifyContent: 'space-between',
