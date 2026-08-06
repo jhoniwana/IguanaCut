@@ -55,9 +55,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Share intent (Instagram/otras apps -> "Compartir enlace"): guardar la
-    // URL para que la web la precargue en el modal de descargas. launchMode
-    // singleTask -> onNewIntent cuando la app ya esta abierta.
+    // Share intent (Instagram/TikTok/otras apps -> "Compartir enlace"):
+    // guardar la URL para que la web la precargue en el modal de descargas.
+    // launchMode singleTask -> onNewIntent cuando la app ya esta abierta.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShareIntent(intent)
@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ServerScreen() {
-        val app = application as LosslessCutApp
+        val app = application as IguanaCutApp
         val serverManager = remember { app.serverManager }
         val ready by produceState(initialValue = false) {
             while (!value) {
