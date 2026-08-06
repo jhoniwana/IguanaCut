@@ -293,7 +293,23 @@ export default function App() {
       if (IS_ANDROID) {
         loadVideos();
         loadOutputs();
-        return;
+        // Share intent (Instagram/otras apps): si la app recibio una URL
+        // compartida, precargarla en el modal de descargas. Se consulta al
+        // montar y cada 3s (cubre la app ya abierta via onNewIntent).
+        const bridge = (window as any).AndroidBridge;
+        const grabShared = () => {
+          try {
+            const shared = bridge?.getSharedUrl?.();
+            if (shared && /^https?:\/\//.test(shared)) {
+              setDownloadUrl(shared);
+              setFileManagerTab('download');
+              setShowFileManager(true);
+            }
+          } catch { /* sin bridge (web) */ }
+        };
+        grabShared();
+        const sharedTimer = setInterval(grabShared, 3000);
+        return () => clearInterval(sharedTimer);
       }
       // Try saved video ID first
       const lastVideo = localStorage.getItem('losslesscut_last_video');

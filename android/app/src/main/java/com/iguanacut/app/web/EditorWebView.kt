@@ -141,6 +141,15 @@ class AndroidBridge(private val context: Context) {
             "{\"ok\": false, \"error\": \"${e.message}\"}"
         }
     }
+
+    /** URL recibida via Share intent (Instagram, WhatsApp, ...). Se entrega
+     *  una sola vez: la web la consume y la proxima llamada devuelve "". */
+    @JavascriptInterface
+    fun getSharedUrl(): String {
+        val url = SharedUrlHolder.pendingUrl
+        SharedUrlHolder.pendingUrl = null
+        return url ?: ""
+    }
 }
 
 @Composable

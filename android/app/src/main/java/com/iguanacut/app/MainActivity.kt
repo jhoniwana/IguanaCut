@@ -1,6 +1,7 @@
 package com.iguanacut.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -27,6 +28,7 @@ import androidx.core.content.ContextCompat
 import com.iguanacut.app.server.ServerManager
 import com.iguanacut.app.server.ServerService
 import com.iguanacut.app.web.EditorWebView
+import com.iguanacut.app.web.SharedUrlHolder
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleShareIntent(intent)
         // El contenido debe caber bajo las barras del sistema: sin esto la
         // WebView dibuja detras de la barra de estado y los botones del
         // header quedan "intocables" (el sistema se traga los toques).
@@ -50,6 +53,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Share intent (Instagram/otras apps -> "Compartir enlace"): guardar la
+    // URL para que la web la precargue en el modal de descargas. launchMode
+    // singleTask -> onNewIntent cuando la app ya esta abierta.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        val url = Regex("""https?://[^\s<>"]+""").find(text)?.value ?: return
+        SharedUrlHolder.pendingUrl = url
     }
 
     private fun startServerService() {
@@ -72,7 +90,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ServerScreen() {
-        val app = application as IguanaCutApp
+        val app = application as LosslessCutApp
         val serverManager = remember { app.serverManager }
         val ready by produceState(initialValue = false) {
             while (!value) {
