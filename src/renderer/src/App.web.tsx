@@ -541,7 +541,7 @@ export default function App() {
                         <IoMdRefresh size={16} style={{
                           animation: isLoadingVideos ? 'spin 1s linear infinite' : 'none'
                         }} />
-                        Actualizar
+                        Refresh
                       </button>
                     </div>
                     {isLoadingVideos ? (
@@ -768,7 +768,7 @@ export default function App() {
                               }}
                             >
                               <IoMdCut size={18} />
-                              Editar
+                              Edit
                             </button>
                             <button
                               onClick={(e) => {
@@ -834,7 +834,7 @@ export default function App() {
                             <span>🕒 {video.created_at ? new Date(video.created_at).toLocaleDateString() : ''}</span>
                           </div>
 
-                          {/* Cortes exportados de este video */}
+                          {/* Exported cuts for this video */}
                           {(() => {
                             const cuts = outputs.filter(o => o.video_id === video.id);
                             return (
@@ -849,7 +849,7 @@ export default function App() {
                                   color: colors.textSecondary,
                                   marginBottom: '8px',
                                 }}>
-                                  ✂️ Cortes ({cuts.length})
+                                  ✂️ Cuts ({cuts.length})
                                 </div>
                                 {cuts.length === 0 ? (
                                   <p style={{ color: colors.textMuted, fontSize: '12px', margin: 0 }}>
@@ -861,10 +861,10 @@ export default function App() {
                                       <div key={cut.file_name} style={{
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: '8px',
+                                        gap: '6px',
                                         background: colors.surface,
-                                        borderRadius: '8px',
-                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        padding: '5px 8px',
                                       }}>
                                         <span style={{
                                           flex: 1,
@@ -882,14 +882,14 @@ export default function App() {
                                         </span>
                                         <button onClick={() => playOutput(cut.file_name)} title="Play" style={{
                                           background: colors.primary, border: 'none', color: '#000',
-                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         }}>
                                           <IoMdPlay size={14} />
                                         </button>
                                         <button onClick={() => shareOutput(cut.file_name)} title="Share" style={{
                                           background: colors.card, border: `1px solid ${colors.border}`, color: colors.primary,
-                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         }}>
                                           <FiShare2 size={13} />
@@ -897,7 +897,7 @@ export default function App() {
                                         {IS_ANDROID && (
                                         <button onClick={() => saveToGallery(cut.file_name)} title="Save to gallery" style={{
                                           background: colors.card, border: `1px solid ${colors.border}`, color: colors.text,
-                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         }}>
                                           <IoMdCloudDownload size={13} />
@@ -905,7 +905,7 @@ export default function App() {
                                         )}
                                         <button onClick={() => deleteOutput(cut.file_name)} title="Delete" style={{
                                           background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger,
-                                          width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer',
+                                          width: '26px', height: '26px', borderRadius: '6px', cursor: 'pointer',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         }}>
                                           <FiTrash2 size={13} />
@@ -949,13 +949,13 @@ export default function App() {
           }}
         >
           <IoMdRefresh size={16} style={{ animation: isLoadingOutputs ? 'spin 1s linear infinite' : 'none' }} />
-          Actualizar
+          Refresh
         </button>
       </div>
       {isLoadingOutputs ? (
         <div style={{ textAlign: 'center', padding: '40px', color: colors.textMuted }}>
           <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
-          <p>Cargando exportaciones...</p>
+          <p>Loading exports...</p>
         </div>
       ) : outputs.length === 0 ? (
         <div style={{
@@ -967,14 +967,14 @@ export default function App() {
         }}>
           <div style={{ fontSize: '34px', marginBottom: '12px' }}>📤</div>
           <h3 style={{ color: colors.text, margin: '0 0 8px', fontSize: '16px' }}>
-            No hay exportaciones
+            No exports yet
           </h3>
           <p style={{ color: colors.textMuted, margin: 0, fontSize: '13px' }}>
             Your exported cuts will show up here
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {(() => {
             // Agrupar los cortes por video de origen
             const byVideo = new Map<string, OutputFile[]>();
@@ -984,19 +984,19 @@ export default function App() {
               byVideo.get(key)!.push(o);
             }
             const videoName = (id: string) => {
-              if (id === '__none__') return 'Sin vincular';
+              if (id === '__none__') return 'Unlinked';
               const v = videos.find((x) => x.id === id);
-              return v ? v.file_name : 'Sin vincular';
+              return v ? v.file_name : 'Unlinked';
             };
             return Array.from(byVideo.entries()).map(([key, items]) => (
               <div key={key}>
                 <div style={{
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: '700',
                   color: colors.secondary,
-                  margin: '4px 0 8px',
+                  margin: '2px 0 6px',
                 }}>
-                  🎬 {videoName(key)} ({items.length} {items.length === 1 ? 'corte' : 'cortes'})
+                  🎬 {videoName(key)} ({items.length} {items.length === 1 ? 'cut' : 'cuts'})
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {items.map((output) => (
@@ -1005,30 +1005,30 @@ export default function App() {
               style={{
                 background: `linear-gradient(145deg, ${colors.card} 0%, ${colors.surface} 100%)`,
                 border: `1px solid ${colors.border}`,
-                borderRadius: '14px',
-                padding: '14px 16px',
+                borderRadius: '10px',
+                padding: '8px 10px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
+                gap: '8px',
               }}
             >
               <div style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
                 flexShrink: 0,
                 background: colors.gradientAccent + '22',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '18px',
+                fontSize: '14px',
               }}>
                 🎬
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
                   color: colors.text,
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -1055,16 +1055,16 @@ export default function App() {
                     background: colors.primary,
                     border: 'none',
                     color: '#000',
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <IoMdPlay size={17} />
+                  <IoMdPlay size={14} />
                 </button>
                 <button
                   onClick={() => shareOutput(output.file_name)}
@@ -1073,16 +1073,16 @@ export default function App() {
                     background: colors.card,
                     border: `1px solid ${colors.border}`,
                     color: colors.primary,
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <FiShare2 size={17} />
+                  <FiShare2 size={13} />
                 </button>
                 <button
                   onClick={() => downloadOutput(output.file_name)}
@@ -1091,16 +1091,16 @@ export default function App() {
                     background: colors.card,
                     border: `1px solid ${colors.border}`,
                     color: colors.text,
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <IoMdDownload size={17} />
+                  <IoMdDownload size={14} />
                 </button>
                 <button
                   onClick={() => deleteOutput(output.file_name)}
@@ -1110,9 +1110,9 @@ export default function App() {
                     background: 'transparent',
                     border: `1px solid ${colors.danger}`,
                     color: colors.danger,
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -1120,7 +1120,7 @@ export default function App() {
                     opacity: deletingOutput === output.file_name ? 0.5 : 1,
                   }}
                 >
-                  <FiTrash2 size={16} />
+                  <FiTrash2 size={13} />
                 </button>
               </div>
             </div>

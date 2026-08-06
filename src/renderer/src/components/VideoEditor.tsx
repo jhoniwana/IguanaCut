@@ -1371,7 +1371,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   onClick={() => { setLeftSidebarOpen(false); setSidebarOpen(false); }}
                   style={{
                     position: 'absolute', inset: 0,
-                    background: 'rgba(0, 0, 0, 0.55)',
+                    background: 'rgba(0, 0, 0, 0.35)',
                     zIndex: 15,
                     transition: 'opacity 0.3s ease',
                   }}
@@ -1379,19 +1379,23 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               )}
               {/* LEFT SIDEBAR - Tools */}
               <div style={{
-                position: 'absolute', top: 0, left: 0, bottom: 0,
-                // En movil: drawer flotante sobre el video (nunca mas ancho
-                // que la pantalla) y oculto por completo al cerrar.
-                width: leftSidebarOpen ? (isMobile ? 'min(86vw, 300px)' : '320px') : (isMobile ? '0px' : '50px'),
+                position: 'absolute', top: isMobile ? 'auto' : 0, left: 0, bottom: 0,
+                right: isMobile ? 0 : 'auto',
+                // Movil: bottom sheet sobre la mitad inferior (el video queda
+                // visible arriba). Desktop: rail lateral que empuja el video.
+                width: leftSidebarOpen ? (isMobile ? '100%' : '320px') : (isMobile ? '0px' : '50px'),
+                height: isMobile ? (leftSidebarOpen ? '55%' : '0px') : '100%',
                 background: leftSidebarOpen
                   ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
                   : 'rgba(18, 18, 26, 0.9)',
                 backdropFilter: 'blur(16px)',
-                borderRight: `1px solid ${colors.border}`,
+                borderRight: isMobile ? 'none' : `1px solid ${colors.border}`,
+                borderTop: isMobile ? `1px solid ${colors.border}` : 'none',
+                borderRadius: isMobile ? '16px 16px 0 0' : 'none',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex', flexDirection: 'column',
                 zIndex: 20,
-                boxShadow: leftSidebarOpen ? '8px 0 30px rgba(0, 0, 0, 0.3)' : 'none',
+                boxShadow: leftSidebarOpen ? (isMobile ? '0 -8px 30px rgba(0, 0, 0, 0.3)' : '8px 0 30px rgba(0, 0, 0, 0.3)') : 'none',
               }}>
                 {/* Left Sidebar Toggle */}
                 <button
@@ -1420,7 +1424,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     <>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700', fontSize: '14px' }}>
                         <span style={{ fontSize: '16px' }}>🎬</span>
-                        Herramientas
+                        Tools
                       </span>
                       <FiChevronLeft size={20} />
                     </>
@@ -1660,30 +1664,30 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   return (
                     <div style={{
                       position: 'absolute', top: '12px', right: isMobile ? '12px' : (sidebarOpen ? '320px' : '60px'),
-                      background: colors.accent, borderRadius: '8px', padding: '10px 14px',
-                      color: '#000', fontSize: '13px', fontWeight: '600',
+                      background: colors.accent, borderRadius: '6px', padding: '5px 9px',
+                      color: '#000', fontSize: '11px', fontWeight: '600',
                       transition: 'right 0.3s ease',
-                      display: 'flex', flexDirection: 'column', gap: '4px',
+                      display: 'flex', flexDirection: 'column', gap: '2px',
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span>✂️ IN: {fmt(pendingCutStart)}</span>
                         <span style={{ opacity: 0.6 }}>→</span>
                         <span>OUT: {fmt(currentTime)}</span>
                       </div>
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        background: 'rgba(0,0,0,0.15)', borderRadius: '4px', padding: '4px 8px',
+                        background: 'rgba(0,0,0,0.15)', borderRadius: '3px', padding: '2px 6px',
                         marginTop: '2px',
                       }}>
-                        <span style={{ fontSize: '11px', opacity: 0.8 }}>Duration:</span>
+                        <span style={{ fontSize: '10px', opacity: 0.8 }}>Duration:</span>
                         <span style={{
-                          fontSize: '16px', fontWeight: '700', fontFamily: 'monospace',
+                          fontSize: '13px', fontWeight: '700', fontFamily: 'monospace',
                           color: clipDuration >= 0.1 ? '#000' : '#666',
                         }}>
                           {mins}:{secs.toString().padStart(2, '0')}.{ms}
                         </span>
                       </div>
-                      <div style={{ fontSize: '10px', opacity: 0.7, textAlign: 'center' }}>
+                      <div style={{ fontSize: '9px', opacity: 0.7, textAlign: 'center' }}>
                         Press O to create clip
                       </div>
                     </div>
@@ -1875,17 +1879,22 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
 
                {/* Clips Sidebar */}
               <div style={{
-                position: 'absolute', top: 0, right: 0, bottom: 0,
-                width: sidebarOpen ? (isMobile ? 'min(86vw, 300px)' : '360px') : (isMobile ? '0px' : '50px'),
+                position: 'absolute', top: isMobile ? 'auto' : 0, right: 0, bottom: 0,
+                left: isMobile ? 0 : 'auto',
+                // Movil: bottom sheet (el video queda visible arriba).
+                width: sidebarOpen ? (isMobile ? '100%' : '360px') : (isMobile ? '0px' : '50px'),
+                height: isMobile ? (sidebarOpen ? '55%' : '0px') : '100%',
                 background: sidebarOpen
                   ? `linear-gradient(180deg, rgba(18, 18, 26, 0.98) 0%, rgba(10, 10, 15, 0.98) 100%)`
                   : 'rgba(18, 18, 26, 0.9)',
                 backdropFilter: 'blur(16px)',
-                borderLeft: `1px solid ${colors.border}`,
+                borderLeft: isMobile ? 'none' : `1px solid ${colors.border}`,
+                borderTop: isMobile ? `1px solid ${colors.border}` : 'none',
+                borderRadius: isMobile ? '16px 16px 0 0' : 'none',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex', flexDirection: 'column',
                 zIndex: 20,
-                boxShadow: sidebarOpen ? '-8px 0 30px rgba(0, 0, 0, 0.3)' : 'none',
+                boxShadow: sidebarOpen ? (isMobile ? '0 -8px 30px rgba(0, 0, 0, 0.3)' : '-8px 0 30px rgba(0, 0, 0, 0.3)') : 'none',
               }}>
                 {/* Sidebar Toggle - Gradient Header */}
                 <button
@@ -2748,7 +2757,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                   }}
                 >
                   <span style={{ fontSize: '14px' }}>🎬</span>
-                  Herramientas
+                  Tools
                   {(cropConfig.enabled || blurConfig.mode === 'auto') && (
                     <span style={{
                       background: 'rgba(255,255,255,0.2)',
