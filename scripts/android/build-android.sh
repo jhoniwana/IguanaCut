@@ -6,7 +6,7 @@
 #   4. Copia assets al proyecto Android
 #   5. Gradle -> APK/AAB
 #
-# Uso: scripts/android/build-android.sh [play|enhanced] [release|debug]
+# Uso: scripts/android/build-android.sh [enhanced] [release|debug]
 #
 # Requiere:
 #   - Node + yarn (frontend)
@@ -21,15 +21,9 @@ ANDROID_DIR="$REPO_DIR/android"
 ASSETS_NATIVE="$ANDROID_DIR/app/src/main/assets/native"
 ASSETS_WEB="$ANDROID_DIR/app/src/main/assets/web"
 
-FLAVOR="${1:-play}"
+# Solo existe el flavor enhanced (sideload); no hay builds de Play Store.
+FLAVOR="${1:-enhanced}"
 BUILD_TYPE="${2:-release}"
-
-# El flavor "play" (Google Play) no incluye yt-dlp -> ocultar la descarga desde URL
-if [ "$FLAVOR" = "play" ]; then
-    VITE_HIDE_URL_DOWNLOAD=1
-else
-    VITE_HIDE_URL_DOWNLOAD=0
-fi
 
 if command -v yarn >/dev/null 2>&1; then
     YARN_BIN="yarn"
@@ -58,7 +52,7 @@ fi
 
 echo "==================== 1/5 Frontend ===================="
 cd "$REPO_DIR"
-VITE_HIDE_URL_DOWNLOAD="$VITE_HIDE_URL_DOWNLOAD" "$YARN_BIN" "${YARN_ARGS[@]}" build:web
+VITE_HIDE_URL_DOWNLOAD="${VITE_HIDE_URL_DOWNLOAD:-0}" "$YARN_BIN" "${YARN_ARGS[@]}" build:web
 echo "-> backend/web/ OK"
 
 echo "==================== 2/5 Backend Go (ARM64 + x86_64) ===================="

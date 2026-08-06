@@ -30,13 +30,9 @@ android {
         }
     }
 
-    // Play build (no yt-dlp) vs Enhanced build (yt-dlp bundled, sideload only)
+    // Enhanced build (yt-dlp bundled): sideload only - no Play Store builds
     flavorDimensions += "distribution"
     productFlavors {
-        create("play") {
-            dimension = "distribution"
-            buildConfigField("boolean", "ENABLE_YTDLP", "false")
-        }
         create("enhanced") {
             dimension = "distribution"
             buildConfigField("boolean", "ENABLE_YTDLP", "true")

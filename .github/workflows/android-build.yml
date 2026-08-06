@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -43,8 +43,6 @@ jobs:
 
       - name: Build frontend (web)
         run: yarn build:web
-        env:
-          VITE_HIDE_URL_DOWNLOAD: "1"
 
       - name: Build backend (linux arm64, static)
         run: |
@@ -67,33 +65,14 @@ jobs:
           cp scripts/android/ffmpeg-dist/arm64-v8a/bin/ffprobe android/app/src/main/assets/native/ffprobe
           cp -r backend/web/. android/app/src/main/assets/web/
 
-      - name: Gradle assemble (play flavor)
+      - name: Gradle assemble (enhanced flavor)
         run: |
           cd android
-          ./gradlew :app:assemblePlayRelease
+          ./gradlew :app:assembleEnhancedRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: iguanacut-play-release
-          path: android/app/build/outputs/apk/play/release/*.apk
+          name: iguanacut-enhanced-release
+          path: android/app/build/outputs/apk/enhanced/release/*.apk
 
-      - name: Publish Release v1.0.0
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.0
-          name: IguanaCut v1.0.0
-          body: |
-            Your pocket video cutter 🦎
-
-            Download any video (YouTube and hundreds of sites via yt-dlp),
-            mark the start and end, and export the fragment without losing
-            quality. Everything on your phone: no subscriptions, no accounts,
-            no servers, no ads.
-
-            📲 Grab the APK from Assets and install it (Android 9+). The
-            *enhanced* flavor (with yt-dlp) is built locally with:
-            `scripts/android/build-android.sh enhanced release`
-          files: android/app/build/outputs/apk/play/release/*.apk
-          allowUpdates: true
-          make_latest: true
