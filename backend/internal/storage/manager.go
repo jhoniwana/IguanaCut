@@ -547,6 +547,12 @@ func (m *Manager) ListVideos() ([]*models.Video, error) {
 		videos = append(videos, video)
 	}
 
+	// Mas recientes primero: os.ReadDir ordena por nombre (UUID aleatorio)
+	// y el orden de archivos parecia "raro" en la galeria.
+	sort.Slice(videos, func(i, j int) bool {
+		return videos[i].CreatedAt.After(videos[j].CreatedAt)
+	})
+
 	return videos, nil
 }
 

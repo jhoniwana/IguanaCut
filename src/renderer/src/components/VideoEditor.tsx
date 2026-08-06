@@ -2535,7 +2535,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                               background: colors.card, borderRadius: '8px', padding: '6px 8px',
                             }}>
                               <img
-                                src={`/api/outputs/${encodeURIComponent(name)}/thumbnail`}
+                                src={`/api/outputs/${encodeURIComponent(name)}/thumbnail?v=${Date.now()}`}
                                 alt=""
                                 loading="lazy"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

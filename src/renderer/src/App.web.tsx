@@ -549,7 +549,7 @@ export default function App() {
       padding: '4px 8px',
     }}>
       <img
-        src={`/api/outputs/${encodeURIComponent(cut.file_name)}/thumbnail`}
+        src={`/api/outputs/${encodeURIComponent(cut.file_name)}/thumbnail?v=${encodeURIComponent(cut.created_at || '')}`}
         alt=""
         loading="lazy"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
