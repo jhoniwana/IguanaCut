@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IguanaCut — Lossless Video Editor for Android</title>
+<meta name="description" content="IguanaCut is a free, open-source lossless video editor for Android. Cut videos without re-encoding, download from YouTube/TikTok/Instagram, fully offline and private.">
+<meta property="og:title" content="IguanaCut — Lossless Video Editor for Android">
+<meta property="og:description" content="Cut videos without losing quality. Download from 1000+ sites. 100% offline, open source, no ads.">
+<meta property="og:type" content="website">
+<style>
+  :root {
+    --bg: #0d1110;
+    --surface: #151b19;
+    --card: #1c2421;
+    --border: #2e3d37;
+    --primary: #0CB691;
+    --secondary: #4FD6B8;
+    --accent: #D1F566;
+    --text: #ffffff;
+    --muted: #7d8f88;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #14201c 0%, var(--bg) 65%);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 28px 0; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+  .brand img { height: 34px; }
+  .nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 14px; }
+  .nav a:hover { color: var(--primary); }
+  .hero { text-align: center; padding: 56px 0 40px; }
+  .hero .logo { height: 96px; margin-bottom: 20px; filter: drop-shadow(0 0 24px rgba(12,182,145,0.4)); }
+  .hero h1 { font-size: 42px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; }
+  .hero h1 span { background: linear-gradient(90deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 28px; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 14px 30px; border-radius: 9999px;
+    font-size: 16px; font-weight: 700; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #06251d; box-shadow: 0 8px 24px rgba(12,182,145,0.35); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--surface); }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; padding: 40px 0; }
+  .feature { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+  .feature h3 { font-size: 16px; margin-bottom: 8px; }
+  .feature p { color: var(--muted); font-size: 14px; }
+  .feature .ic { font-size: 26px; margin-bottom: 10px; }
+  .steps { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; margin: 24px 0 48px; }
+  .steps h2 { margin-bottom: 16px; font-size: 22px; }
+  .steps ol { padding-left: 20px; color: var(--muted); font-size: 15px; }
+  .steps li { margin-bottom: 10px; }
+  .steps code { background: var(--card); padding: 2px 8px; border-radius: 6px; color: var(--secondary); font-size: 13px; }
+  footer { border-top: 1px solid var(--border); padding: 24px 0 40px; text-align: center; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--primary); text-decoration: none; }
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 30px; }
+    .hero p { font-size: 16px; }
+    .nav a { margin-left: 12px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand"><img src="logo.svg" alt="IguanaCut logo"> IguanaCut</div>
+    <nav class="nav">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/jhoniwana/IguanaCut">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <img class="logo" src="logo.svg" alt="IguanaCut">
+    <h1>Cut videos without losing a <span>single pixel</span></h1>
+    <p>A free, open-source lossless video editor for Android. Trim, download and organize your clips — fully offline, private and ad-free.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/jhoniwana/IguanaCut/releases/tag/v1.0.1">Download APK</a>
+      <a class="btn btn-ghost" href="https://github.com/jhoniwana/IguanaCut">View source</a>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="feature"><div class="ic">✂️</div><h3>Lossless cutting</h3><p>Mark the start and end, export without re-encoding. Zero quality loss, no watermark.</p></div>
+    <div class="feature"><div class="ic">📥</div><h3>Download from 1000+ sites</h3><p>YouTube, TikTok, Instagram and more via embedded yt-dlp. No external tools needed.</p></div>
+    <div class="feature"><div class="ic">🔗</div><h3>Share intent</h3><p>Share a link from any app and the download screen opens with the URL preloaded.</p></div>
+    <div class="feature"><div class="ic">🗂️</div><h3>Smart exports</h3><p>Every cut is linked to its source video with auto-generated previews, play and save-to-gallery.</p></div>
+    <div class="feature"><div class="ic">🔒</div><h3>100% offline &amp; private</h3><p>Everything runs on your device. Your videos never leave your phone.</p></div>
+    <div class="feature"><div class="ic">🧩</div><h3>Open source</h3><p>GPL-2.0 licensed. Audit the code, verify the privacy claims, or fork it.</p></div>
+  </section>
+
+  <section id="install" class="steps">
+    <h2>Install in 3 steps</h2>
+    <ol>
+      <li>Download the APK from the <a href="https://github.com/jhoniwana/IguanaCut/releases/tag/v1.0.1" style="color:var(--primary)">latest release</a>.</li>
+      <li>Open it on your phone and allow <code>install from unknown sources</code> (Android 9+).</li>
+      <li>Launch IguanaCut, import or download a video, and start cutting.</li>
+    </ol>
+  </section>
+
+  <footer>
+    <p><a href="https://github.com/jhoniwana/IguanaCut">IguanaCut</a> — open source (GPL-2.0) · Built with Go, React and FFmpeg</p>
+  </footer>
+
+</div>
+</body>
+</html>
