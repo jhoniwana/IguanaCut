@@ -495,7 +495,7 @@ export default function App() {
       step: 1,
       icon: <FiUpload size={28} />,
       title: 'Upload your video',
-      description: 'Select a file from your computer to start editing it.',
+      description: 'Import a file from your gallery or download any URL. Your file shows up in "My Files".',
     },
     {
       step: 2,
@@ -524,8 +524,8 @@ export default function App() {
     {
       step: 6,
       icon: <IoMdDownload size={28} />,
-      title: 'Exporta',
-      description: 'Download your edited video without losing quality.',
+      title: 'Export',
+      description: 'Export without losing quality. Your cut appears right under its source file with a preview: tap it to play, share or save it to the gallery.',
     },
   ];
 

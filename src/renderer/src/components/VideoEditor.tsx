@@ -2990,6 +2990,9 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             <div style={{ color: colors.textMuted, fontSize: '11px', marginTop: '2px' }}>
               Use the ← → arrows to seek
             </div>
+            <div style={{ color: colors.textMuted, fontSize: '11px', marginTop: '2px' }}>
+              After exporting, your cut shows up under the file with a preview
+            </div>
           </div>
           <button
             onClick={() => {
