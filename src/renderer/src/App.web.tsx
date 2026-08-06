@@ -626,7 +626,7 @@ export default function App() {
                     color: colors.textMuted,
                   }}>
                     <IoMdRefresh size={32} style={{ animation: 'spin 1s linear infinite' }} />
-                    <p>Cargando archivos...</p>
+                    <p>Loading files...</p>
                   </div>
                 ) : videos.length === 0 ? (
                   <div style={{
@@ -1357,7 +1357,7 @@ export default function App() {
             gap: '8px',
           }}>
             <span style={{ color: colors.primary }}>◆</span>
-            Atajos de teclado
+            Keyboard shortcuts
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[

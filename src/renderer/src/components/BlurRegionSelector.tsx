@@ -959,7 +959,7 @@ export default function BlurRegionSelector({ config, onChange, onClose, videoId,
         }}>
           <FiDownload size={18} color={colors.primary} />
           <span style={{ color: colors.text, fontSize: '12px' }}>
-            <strong>Done!</strong> Exporta tu video para aplicar la censura
+            <strong>Done!</strong> Export your video to apply the blur
           </span>
         </div>
       )}

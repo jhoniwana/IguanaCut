@@ -1007,7 +1007,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
       a.href = result.url;
       a.download = result.filename;
       a.click();
-      showToast(`Captura guardada: ${result.filename}`, 'success');
+      showToast(`Screenshot saved: ${result.filename}`, 'success');
     } catch (e) {
       console.error('Screenshot failed:', e);
       showToast('Error al capturar imagen', 'error');
@@ -1305,7 +1305,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
               border: `1px solid ${colors.border}`,
             }}>
               <p style={{ fontSize: '13px', color: colors.textMuted, margin: 0 }}>
-                <strong style={{ color: colors.primary }}>Atajos:</strong> Espacio=Play, I/O=Cortar, ←→=1s, Shift+←→=0.1s
+                <strong style={{ color: colors.primary }}>Shortcuts:</strong> Espacio=Play, I/O=Cortar, ←→=1s, Shift+←→=0.1s
               </p>
             </div>
             <button onClick={() => setShowHelp(false)} style={{
@@ -2391,7 +2391,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                           marginBottom: '8px',
                         }}>
                           <span style={{ color: colors.text, fontSize: '13px', fontWeight: '600' }}>
-                            Exportando...
+                            Exporting...
                           </span>
                           <span style={{
                             color: colors.primary,

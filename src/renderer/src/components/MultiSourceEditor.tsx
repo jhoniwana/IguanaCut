@@ -1277,7 +1277,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
             }}
           >
             <IoMdDownload size={18} />
-            {isExporting ? `${Math.round(exportProgress)}%` : (exportedFile ? 'Exportado' : 'Export')}
+            {isExporting ? `${Math.round(exportProgress)}%` : (exportedFile ? 'Exported' : 'Export')}
           </button>
 
           {/* Download button - shown when export is ready */}
@@ -1668,7 +1668,7 @@ export default function MultiSourceEditor({ onClose, initialVideoId }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>⌨️ Atajos de Teclado</h3>
+              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>⌨️ Keyboard Shortcuts</h3>
               <span style={{ fontSize: 12, color: colors.textMuted }}>Press ? for help</span>
             </div>
 

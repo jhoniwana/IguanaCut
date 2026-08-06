@@ -67,7 +67,7 @@ class AndroidBridge(private val context: Context) {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val chooser = Intent.createChooser(intent, "Compartir")
+            val chooser = Intent.createChooser(intent, "Share")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
             "{\"ok\": true}"
