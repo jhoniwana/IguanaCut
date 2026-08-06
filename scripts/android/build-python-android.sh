@@ -86,6 +86,20 @@ find "$PREFIX/lib/python3.12/lib-dynload" -name "*.so" -exec "$STRIP" {} + 2>/de
 rm -rf "$PREFIX/lib/python3.12/test" "$PREFIX/lib/python3.12/idlelib" \
        "$PREFIX/lib/python3.12/tkinter" "$PREFIX/lib/python3.12/turtledemo"
 
+# Android/bionic: los modulos .so NO declaran NEEDED libpython3.12 (en
+# glibc sus simbolos se resuelven por el namespace global; en Android no)
+# y yt-dlp muere con "cannot locate symbol _Py_NoneStruct" al importar.
+# Anadir el NEEDED con patchelf: el loader de bionic carga libpython como
+# dependencia del modulo y resuelve todos los Py*_* symbols.
+if command -v patchelf >/dev/null 2>&1; then
+    for so in "$PREFIX"/lib/python3.12/lib-dynload/*.so; do
+        patchelf --add-needed libpython3.12.so.1.0 "$so" 2>/dev/null || true
+    done
+    echo "-> lib-dynload: $(ls "$PREFIX"/lib/python3.12/lib-dynload/*.so | wc -l) modulos con NEEDED libpython3.12 (patchelf)"
+else
+    echo "WARNING: patchelf no instalado; los modulos python no llevan NEEDED libpython y fallaran en Android" >&2
+fi
+
 # aapt2 trata como "ocultos" los directorios cuyo nombre empieza con '_'
 # (no entran al APK). Renombrar zipfile/_path -> path_ y parchear el import:
 # es el unico paquete _* que necesita el runtime (lo usa zipfile en 3.12).
