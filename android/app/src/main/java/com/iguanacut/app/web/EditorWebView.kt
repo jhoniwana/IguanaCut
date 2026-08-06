@@ -113,9 +113,24 @@ class AndroidBridge(private val context: Context) {
                 setDataAndType(uri, "video/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val chooser = Intent.createChooser(intent, "Reproducir")
+            val chooser = Intent.createChooser(intent, "Play")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
+            "{\"ok\": true}"
+        } catch (e: Exception) {
+            "{\"ok\": false, \"error\": \"${e.message}\"}"
+        }
+    }
+
+    /** Abre una URL externa (video directo o YouTube) en el reproductor del
+     *  sistema / app correspondiente (no descarga, no guarda nada). */
+    @JavascriptInterface
+    fun playUrl(url: String): String {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
             "{\"ok\": true}"
         } catch (e: Exception) {
             "{\"ok\": false, \"error\": \"${e.message}\"}"

@@ -148,6 +148,16 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
     return !localStorage.getItem('losslesscut_seen_hint');
   });
 
+  // Auto-dismiss: el hint no debe bloquear el video (banner no modal).
+  useEffect(() => {
+    if (!showFirstTimeHint) return;
+    const t = setTimeout(() => {
+      setShowFirstTimeHint(false);
+      localStorage.setItem('losslesscut_seen_hint', 'true');
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [showFirstTimeHint]);
+
   // Crop drag state
   const [isDraggingCrop, setIsDraggingCrop] = useState(false);
   const [cropDragStart, setCropDragStart] = useState({ x: 0, y: 0, cropX: 0, cropY: 0 });
@@ -1216,7 +1226,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
             border: `1px solid ${colors.border}`,
             borderRadius: '50%',
             transition: 'all 0.2s ease',
-          }} title="Ayuda">
+          }} title="Help">
             <IoMdHelpCircle size={20} />
           </button>
           <button onClick={onClose} style={{
@@ -1637,7 +1647,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                     animation: 'pulse 1.5s infinite',
                   }}>
                     <span style={{ width: '8px', height: '8px', background: '#fff', borderRadius: '50%' }} />
-                    VISTA PREVIA ({currentPreviewSegmentIndex + 1}/{segments.filter(s => s.selected).length})
+                    PREVIEW ({currentPreviewSegmentIndex + 1}/{segments.filter(s => s.selected).length})
                   </div>
                 )}
 
@@ -2306,7 +2316,7 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
                         gap: '6px',
                       }}
                     >
-                      {isPreviewMode ? <><IoMdPause size={16} /> Detener Preview</> : <><IoMdPlay size={16} /> View Clips</>}
+                      {isPreviewMode ? <><IoMdPause size={16} /> Stop Preview</> : <><IoMdPlay size={16} /> View Clips</>}
                     </button>
 
                     {/* Export format selector */}
@@ -2891,105 +2901,53 @@ export default function VideoEditor({ onClose, onOpenFiles, initialVideoId }: Pr
         ))}
       </div>
 
-      {/* First time user hint overlay */}
+      {/* First time hint: banner compacto (no tapa el video) */}
       {showFirstTimeHint && videoUrl && (
         <div style={{
           position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.8)',
+          bottom: '12px',
+          left: '12px',
+          right: '12px',
+          background: 'rgba(10, 10, 15, 0.92)',
+          backdropFilter: 'blur(10px)',
+          border: `1px solid ${colors.border}`,
+          borderRadius: '12px',
+          padding: '10px 12px',
+          zIndex: 1001,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1001,
+          gap: '10px',
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.4)',
         }}>
-          <div style={{
-            background: colors.surface,
-            borderRadius: '16px',
-            padding: '32px',
-            maxWidth: '400px',
-            textAlign: 'center',
-            border: `1px solid ${colors.border}`,
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>✂️</div>
-            <h2 style={{ color: colors.text, margin: '0 0 12px', fontSize: '22px' }}>
-              Welcome to LosslessCut!
-            </h2>
-            <p style={{ color: colors.textSecondary, margin: '0 0 24px', lineHeight: '1.6' }}>
-              Creating clips is easy:
-            </p>
-            <div style={{
-              background: colors.card,
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '24px',
-              textAlign: 'left',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                <span style={{
-                  background: colors.accent,
-                  color: '#000',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: '700',
-                  fontSize: '16px',
-                }}>I</span>
-                <span style={{ color: colors.text }}>Set the <strong>start</strong> del clip</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                <span style={{
-                  background: colors.secondary,
-                  color: '#fff',
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: '700',
-                  fontSize: '16px',
-                }}>O</span>
-                <span style={{ color: colors.text }}>Set the <strong>fin</strong> y crea el clip</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{
-                  background: colors.border,
-                  color: colors.text,
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: '700',
-                  fontSize: '10px',
-                }}>←→</span>
-                <span style={{ color: colors.text }}>Navigate the video</span>
-              </div>
+          <span style={{ fontSize: '20px', flexShrink: 0 }}>✂️</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: colors.text, fontSize: '12px', fontWeight: '600', lineHeight: '1.4' }}>
+              Press <strong style={{ color: colors.accent }}>I</strong> to set the start,{' '}
+              <strong style={{ color: colors.secondary }}>O</strong> to set the end
             </div>
-            <button
-              onClick={() => {
-                setShowFirstTimeHint(false);
-                localStorage.setItem('losslesscut_seen_hint', 'true');
-              }}
-              style={{
-                background: colors.primary,
-                color: '#fff',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '14px 32px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                width: '100%',
-              }}
-            >
-              Got it!
-            </button>
+            <div style={{ color: colors.textMuted, fontSize: '11px', marginTop: '2px' }}>
+              Use the ← → arrows to seek
+            </div>
           </div>
+          <button
+            onClick={() => {
+              setShowFirstTimeHint(false);
+              localStorage.setItem('losslesscut_seen_hint', 'true');
+            }}
+            style={{
+              background: colors.primary,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            Got it
+          </button>
         </div>
       )}
 

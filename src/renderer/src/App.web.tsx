@@ -406,6 +406,19 @@ export default function App() {
     }
   };
 
+  // Play a URL instead of downloading: system player (Android) or new
+  // tab (web). YouTube URLs open the YouTube app on Android.
+  const handlePlayUrl = () => {
+    const url = downloadUrl.trim();
+    if (!url) return;
+    const bridge = (window as any).AndroidBridge;
+    if (IS_ANDROID && bridge?.playUrl) {
+      bridge.playUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
   // Poll download status
   const pollDownloadStatus = async (id: string) => {
     let retries = 0;
@@ -430,7 +443,11 @@ export default function App() {
 
         // Better status text
         if (data.status === 'downloading') {
-          setDownloadStatus(`Downloading... ${progress.toFixed(1)}%`);
+          // Con 0% yt-dlp todavia esta resolviendo el video (fase que puede
+          // tardar); mostrar feedback para que no parezca colgado.
+          setDownloadStatus(progress > 0
+            ? `Downloading... ${progress.toFixed(1)}%`
+            : 'Resolving video...');
         } else if (data.status === 'processing') {
           setDownloadStatus('Processing video...');
         } else {
@@ -1860,11 +1877,36 @@ export default function App() {
                         }}
                         onKeyDown={(e) => e.key === 'Enter' && !isDownloading && startDownload()}
                       />
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={handlePlayUrl}
+                        disabled={isDownloading || !downloadUrl.trim()}
+                        title="Play the video without downloading (system player)"
+                        style={{
+                          flex: '0 0 auto',
+                          background: colors.card,
+                          color: colors.primary,
+                          border: `1px solid ${colors.primary}`,
+                          borderRadius: '9999px',
+                          padding: '14px 18px',
+                          fontSize: '15px',
+                          fontWeight: '700',
+                          cursor: (!isDownloading && downloadUrl.trim()) ? 'pointer' : 'not-allowed',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          opacity: (!isDownloading && downloadUrl.trim()) ? 1 : 0.5,
+                        }}
+                      >
+                        <IoMdPlay size={18} />
+                        Play
+                      </button>
                       <button
                         onClick={startDownload}
                         disabled={isDownloading}
                         style={{
-                          width: '100%',
+                          flex: 1,
                           background: isDownloading ? colors.card : colors.gradient,
                           color: '#fff',
                           border: 'none',
@@ -1893,6 +1935,7 @@ export default function App() {
                           </>
                         )}
                       </button>
+                      </div>
                     </div>
 
                     {/* Download Progress */}
