@@ -259,12 +259,18 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			router.StaticFile("/"+e.Name(), filepath.Join(webDir, e.Name()))
 		}
 	}
-	router.StaticFile("/", filepath.Join(webDir, "index.html"))
-	router.StaticFile("/index.html", filepath.Join(webDir, "index.html"))
+	// index.html SIEMPRE sin cache: el WebView de Android cachea por
+	// heuristica y seguia sirviendo el bundle viejo tras cada update.
+	serveIndex := func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache")
+		c.File(filepath.Join(webDir, "index.html"))
+	}
+	router.GET("/", serveIndex)
+	router.GET("/index.html", serveIndex)
 
 	// Catch-all for SPA routing
 	router.NoRoute(func(c *gin.Context) {
-		c.File(filepath.Join(webDir, "index.html"))
+		serveIndex(c)
 	})
 
 	return router
