@@ -40,6 +40,7 @@ func (m *Manager) Initialize() error {
 		m.VideosDir(),
 		m.WaveformsDir(),
 		m.ScreenshotsDir(),
+		m.ThumbnailsDir(),
 	}
 
 	for _, dir := range dirs {
@@ -210,6 +211,11 @@ func (m *Manager) ListOutputs() ([]models.OutputFile, error) {
 	out := []models.OutputFile{}
 	for _, e := range entries {
 		if e.IsDir() {
+			continue
+		}
+		// Archivos ocultos (indice .outputs_index.json, etc.) no son
+		// exportaciones: no listarlos.
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		// Los previews temporales no son exportaciones: excluirlos para

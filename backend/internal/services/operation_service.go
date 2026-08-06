@@ -309,7 +309,7 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		// Preview frame para la galeria de exportaciones (cacheado).
 		thumbPath := s.storage.GetOutputThumbnailPath(filepath.Base(f))
 		if !s.storage.FileExists(thumbPath) {
-			if err := s.ffmpeg.GenerateThumbnail(ctx, f, thumbPath, 1.0); err != nil {
+			if err := s.ffmpeg.GenerateThumbnail(ctx, f, thumbPath, 0.0); err != nil {
 				s.logger.Warn("Failed to generate output thumbnail", zap.String("file", f), zap.Error(err))
 			}
 		}
@@ -320,6 +320,24 @@ func (s *OperationService) runExport(operation *models.Operation, project *model
 		zap.Int("outputFilesCount", len(outputFiles)),
 		zap.Strings("outputFiles", outputFiles),
 	)
+}
+
+// GenerateOutputThumbnail creates (on demand) the cached preview frame of an
+// exported file. Used by the thumbnail endpoint to backfill old exports that
+// never got a preview.
+func (s *OperationService) GenerateOutputThumbnail(fileName string) error {
+	input := s.storage.GetOutputPath(fileName)
+	if !s.storage.FileExists(input) {
+		return fmt.Errorf("output not found: %s", fileName)
+	}
+	thumbPath := s.storage.GetOutputThumbnailPath(fileName)
+	if s.storage.FileExists(thumbPath) {
+		return nil
+	}
+	if err := os.MkdirAll(s.storage.ThumbnailsDir(), 0755); err != nil {
+		return err
+	}
+	return s.ffmpeg.GenerateThumbnail(context.Background(), input, thumbPath, 0.0)
 }
 
 func (s *OperationService) exportMergedSegments(ctx context.Context, inputPath, outputPath string, segments []models.Segment, request models.ExportRequest, onProgress ffmpeg.ProgressCallback) error {
@@ -1103,7 +1121,7 @@ func (s *OperationService) runTimelineExport(operation *models.Operation, projec
 	}
 	thumbPath := s.storage.GetOutputThumbnailPath(filepath.Base(outputPath))
 	if !s.storage.FileExists(thumbPath) {
-		if err := s.ffmpeg.GenerateThumbnail(ctx, outputPath, thumbPath, 1.0); err != nil {
+		if err := s.ffmpeg.GenerateThumbnail(ctx, outputPath, thumbPath, 0.0); err != nil {
 			s.logger.Warn("Failed to generate timeline thumbnail", zap.String("output", outputPath), zap.Error(err))
 		}
 	}

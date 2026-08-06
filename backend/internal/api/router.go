@@ -224,6 +224,14 @@ func NewRouter(services *services.Services, cfg *config.Config, logger *zap.Logg
 			thumbPath := services.Storage.GetOutputThumbnailPath(filename)
 
 			if !services.Storage.FileExists(thumbPath) {
+				// Generar al vuelo: cubre exports antiguos (creados antes de
+				// los previews) sin necesidad de re-exportar.
+				if err := services.Operation.GenerateOutputThumbnail(filename); err != nil {
+					c.Status(404)
+					return
+				}
+			}
+			if !services.Storage.FileExists(thumbPath) {
 				c.Status(404)
 				return
 			}
