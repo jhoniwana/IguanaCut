@@ -2,6 +2,7 @@ package services
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -445,6 +446,7 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 	args := []string{
 		"--newline",
 		"--no-playlist",
+		"--socket-timeout", "30",
 		"--progress",
 		"-o", outputTemplate,
 	}
@@ -491,14 +493,18 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 	// Parse progress from stdout
 	go s.parseDownloadProgress(stdout, download)
 
-	// Log stderr (with cleanup)
+	// Log stderr (with cleanup) y guardar las ultimas lineas para poder
+	// mostrar el motivo real del fallo (yt-dlp detalla en stderr los ERROR:).
+	collector := &stderrCollector{}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			s.logger.Debug("yt-dlp stderr", zap.String("line", scanner.Text()))
+			line := scanner.Text()
+			s.logger.Debug("yt-dlp stderr", zap.String("line", line))
+			collector.add(line)
 		}
 	}()
 
@@ -513,7 +519,13 @@ func (s *DownloadService) runYtdlpDownload(download *models.Download, req Downlo
 
 		s.logger.Error("yt-dlp failed", zap.Error(err))
 		download.Status = models.DownloadStatusFailed
-		download.Error = err.Error()
+		wg.Wait()
+		if tail := collector.tail(); tail != "" {
+			// Sin esto el usuario solo ve "exit status 1".
+			download.Error = "yt-dlp: " + tail
+		} else {
+			download.Error = err.Error()
+		}
 		s.storage.UpdateDownload(download)
 		return
 	}
@@ -620,9 +632,17 @@ type VideoInfo struct {
 
 // getVideoInfo retrieves video information without downloading
 func (s *DownloadService) getVideoInfo(url string) (*VideoInfo, error) {
-	cmd := exec.Command(s.config.YtDlp.Path, "--dump-json", "--no-playlist", url)
+	cmd := exec.Command(s.config.YtDlp.Path, "--dump-json", "--no-playlist", "--socket-timeout", "30", url)
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
 	output, err := cmd.Output()
 	if err != nil {
+		if tail := strings.TrimSpace(stderrBuf.String()); tail != "" {
+			if len(tail) > 600 {
+				tail = tail[len(tail)-600:]
+			}
+			return nil, fmt.Errorf("yt-dlp: %s", tail)
+		}
 		return nil, fmt.Errorf("failed to get video info: %w", err)
 	}
 
@@ -632,6 +652,38 @@ func (s *DownloadService) getVideoInfo(url string) (*VideoInfo, error) {
 	}
 
 	return &info, nil
+}
+
+
+// stderrCollector guarda las ultimas lineas de stderr de yt-dlp (bounded)
+// para poder mostrar el motivo real del fallo al usuario.
+type stderrCollector struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (c *stderrCollector) add(line string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lines = append(c.lines, line)
+	if len(c.lines) > 30 {
+		c.lines = c.lines[len(c.lines)-30:]
+	}
+}
+
+// tail devuelve las ultimas lineas mas relevantes (max 12, max 600 chars).
+func (c *stderrCollector) tail() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	lines := c.lines
+	if len(lines) > 12 {
+		lines = lines[len(lines)-12:]
+	}
+	out := strings.TrimSpace(strings.Join(lines, "\n"))
+	if len(out) > 600 {
+		out = out[len(out)-600:]
+	}
+	return out
 }
 
 // sanitizeFilename removes invalid characters from filename

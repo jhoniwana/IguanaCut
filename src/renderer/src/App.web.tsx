@@ -375,7 +375,7 @@ export default function App() {
 
     setIsDownloading(true);
     setDownloadProgress(0);
-    setDownloadStatus('Iniciando descarga...');
+    setDownloadStatus('Starting download...');
     setDownloadError(null);
     setCompletedDownloadName(null);
     setCompletedDownloadId(null);
@@ -430,11 +430,11 @@ export default function App() {
 
         // Better status text
         if (data.status === 'downloading') {
-          setDownloadStatus(`Descargando... ${progress.toFixed(1)}%`);
+          setDownloadStatus(`Downloading... ${progress.toFixed(1)}%`);
         } else if (data.status === 'processing') {
           setDownloadStatus('Processing video...');
         } else {
-          setDownloadStatus(data.status_text || data.status || 'Trabajando...');
+          setDownloadStatus(data.status_text || data.status || 'Working...');
         }
 
         if (data.status === 'completed') {
@@ -1884,7 +1884,7 @@ export default function App() {
                         {isDownloading ? (
                           <>
                             <IoMdRefresh size={20} style={{ animation: 'spin 1s linear infinite' }} />
-                            Descargando...
+                            Downloading...
                           </>
                         ) : (
                           <>
